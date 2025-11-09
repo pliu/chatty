@@ -1,0 +1,90 @@
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/pliu/chatty/internal/database"
+	"golang.org/x/crypto/bcrypt"
+)
+
+type Credentials struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func Signup(w http.ResponseWriter, r *http.Request) {
+	var creds Credentials
+	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(creds.Password), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := database.CreateUser(creds.Username, string(hashedPassword)); err != nil {
+		http.Error(w, "Username already exists", http.StatusConflict)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func Login(w http.ResponseWriter, r *http.Request) {
+	var creds Credentials
+	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	user, err := database.GetUserByUsername(creds.Username)
+	if err != nil {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(creds.Password)); err != nil {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	// Set session cookie (simplified for demo)
+	http.SetCookie(w, &http.Cookie{
+		Name:    "user_id",
+		Value:   strconv.Itoa(user.ID), // Insecure: exposing ID directly. In prod use sessions.
+		Expires: time.Now().Add(24 * time.Hour),
+		Path:    "/",
+	})
+
+	// Also setting a username cookie for frontend convenience
+	http.SetCookie(w, &http.Cookie{
+		Name:    "username",
+		Value:   user.Username,
+		Expires: time.Now().Add(24 * time.Hour),
+		Path:    "/",
+	})
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func SearchUsers(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		json.NewEncoder(w).Encode([]database.User{})
+		return
+	}
+
+	users, err := database.SearchUsers(query)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(users)
+}

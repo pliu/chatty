@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/pliu/chatty/internal/database"
+	"github.com/pliu/chatty/internal/store"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -15,7 +15,11 @@ type Credentials struct {
 	Password string `json:"password"`
 }
 
-func Signup(w http.ResponseWriter, r *http.Request) {
+type AuthHandler struct {
+	Store store.Store
+}
+
+func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	var creds Credentials
 	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -28,7 +32,7 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := database.CreateUser(creds.Username, string(hashedPassword)); err != nil {
+	if err := h.Store.CreateUser(creds.Username, string(hashedPassword)); err != nil {
 		http.Error(w, "Username already exists", http.StatusConflict)
 		return
 	}
@@ -36,14 +40,14 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
-func Login(w http.ResponseWriter, r *http.Request) {
+func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var creds Credentials
 	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	user, err := database.GetUserByUsername(creds.Username)
+	user, err := h.Store.GetUserByUsername(creds.Username)
 	if err != nil {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
@@ -73,14 +77,14 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func SearchUsers(w http.ResponseWriter, r *http.Request) {
+func (h *AuthHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	if query == "" {
-		json.NewEncoder(w).Encode([]database.User{})
+		json.NewEncoder(w).Encode([]interface{}{})
 		return
 	}
 
-	users, err := database.SearchUsers(query)
+	users, err := h.Store.SearchUsers(query)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

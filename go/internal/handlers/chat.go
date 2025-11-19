@@ -6,32 +6,43 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
-	"github.com/pliu/chatty/internal/database"
+	"github.com/pliu/chatty/internal/store"
 	"github.com/pliu/chatty/internal/ws"
 )
 
-func CreateChat(w http.ResponseWriter, r *http.Request) {
+type ChatHandler struct {
+	Store store.Store
+	Hub   *ws.Hub
+}
+
+type CreateChatRequest struct {
+	Name string `json:"name"`
+}
+
+type InviteUserRequest struct {
+	Username string `json:"username"`
+}
+
+func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 	userID := getUserIDFromCookie(r)
 	if userID == 0 {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	var req struct {
-		Name string `json:"name"`
-	}
+	var req CreateChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	chatID, err := database.CreateChat(req.Name)
+	chatID, err := h.Store.CreateChat(req.Name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	if err := database.AddParticipant(int(chatID), userID); err != nil {
+	if err := h.Store.AddParticipant(int(chatID), userID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -40,47 +51,43 @@ func CreateChat(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]int64{"id": chatID})
 }
 
-func InviteUser(hub *ws.Hub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		chatID, _ := strconv.Atoi(vars["id"])
+func (h *ChatHandler) InviteUser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	chatID, _ := strconv.Atoi(vars["id"])
 
-		var req struct {
-			Username string `json:"username"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		user, err := database.GetUserByUsername(req.Username)
-		if err != nil {
-			http.Error(w, "User not found", http.StatusNotFound)
-			return
-		}
-
-		if err := database.AddParticipant(chatID, user.ID); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Notify the user
-		hub.SendNotification(user.ID, map[string]string{
-			"type": "new_chat",
-		})
-
-		w.WriteHeader(http.StatusOK)
+	var req InviteUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
+
+	user, err := h.Store.GetUserByUsername(req.Username)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	if err := h.Store.AddParticipant(chatID, user.ID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Notify the invited user
+	h.Hub.SendNotification(user.ID, map[string]string{
+		"type": "new_chat",
+	})
+
+	w.WriteHeader(http.StatusOK)
 }
 
-func GetChats(w http.ResponseWriter, r *http.Request) {
+func (h *ChatHandler) GetChats(w http.ResponseWriter, r *http.Request) {
 	userID := getUserIDFromCookie(r)
 	if userID == 0 {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	chats, err := database.GetUserChats(userID)
+	chats, err := h.Store.GetUserChats(userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -89,7 +96,7 @@ func GetChats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(chats)
 }
 
-func GetChatMessages(w http.ResponseWriter, r *http.Request) {
+func (h *ChatHandler) GetChatMessages(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	chatID, _ := strconv.Atoi(vars["id"])
 
@@ -99,13 +106,13 @@ func GetChatMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isParticipant, err := database.IsParticipant(chatID, userID)
+	isParticipant, err := h.Store.IsParticipant(chatID, userID)
 	if err != nil || !isParticipant {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
-	messages, err := database.GetChatMessages(chatID)
+	messages, err := h.Store.GetChatMessages(chatID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

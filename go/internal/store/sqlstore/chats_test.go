@@ -69,3 +69,36 @@ func TestSaveMessage(t *testing.T) {
 		t.Errorf("Expected message content 'Hello', got '%s'", messages[0].Content)
 	}
 }
+
+func TestDeleteChat(t *testing.T) {
+	SetupTestDB(t)
+	defer TeardownTestDB()
+
+	testStore.CreateUser(&models.User{Username: "owner", Password: "pass"})
+	owner, _ := testStore.GetUserByUsername("owner")
+	chatID, _ := testStore.CreateChat("Chat to Delete", owner.ID)
+
+	// Add participant and message
+	testStore.AddParticipant(int(chatID), owner.ID, "key")
+	testStore.SaveMessage(int(chatID), owner.ID, "Message")
+
+	// Delete chat
+	err := testStore.DeleteChat(int(chatID))
+	if err != nil {
+		t.Errorf("Failed to delete chat: %v", err)
+	}
+
+	// Verify chat is gone
+	_, err = testStore.GetChatParticipants(int(chatID))
+	// GetChatParticipants might return empty list, let's check IsParticipant
+	isParticipant, _ := testStore.IsParticipant(int(chatID), owner.ID)
+	if isParticipant {
+		t.Error("Expected user to not be participant after deletion")
+	}
+
+	// Verify messages are gone
+	messages, _ := testStore.GetChatMessages(int(chatID))
+	if len(messages) != 0 {
+		t.Error("Expected messages to be deleted")
+	}
+}

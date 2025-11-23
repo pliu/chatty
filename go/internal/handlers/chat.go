@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
+	"github.com/pliu/chatty/internal/auth"
 	"github.com/pliu/chatty/internal/store"
 	"github.com/pliu/chatty/internal/ws"
 )
@@ -98,6 +99,48 @@ func (h *ChatHandler) InviteUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	chatID, _ := strconv.Atoi(vars["id"])
+
+	userID := getUserIDFromCookie(r)
+	if userID == 0 {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Verify user is the owner
+	ownerID, err := h.Store.GetChatOwner(chatID)
+	if err != nil {
+		http.Error(w, "Chat not found", http.StatusNotFound)
+		return
+	}
+
+	if ownerID != userID {
+		http.Error(w, "Only the chat owner can delete this chat", http.StatusForbidden)
+		return
+	}
+
+	// Get participants before deleting to notify them
+	participants, _ := h.Store.GetChatParticipants(chatID)
+
+	// Delete the chat
+	if err := h.Store.DeleteChat(chatID); err != nil {
+		http.Error(w, "Failed to delete chat", http.StatusInternalServerError)
+		return
+	}
+
+	// Notify all participants to refresh their chat list
+	for _, participant := range participants {
+		h.Hub.SendNotification(participant.ID, map[string]interface{}{
+			"type":    "chat_deleted",
+			"chat_id": chatID,
+		})
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
 func (h *ChatHandler) GetChats(w http.ResponseWriter, r *http.Request) {
 	userID := getUserIDFromCookie(r)
 
@@ -165,12 +208,12 @@ func getUserIDFromCookie(r *http.Request) int {
 	if err != nil {
 		return 0
 	}
-	// In a real app, this would be a session ID lookup, not direct ID
-	// For this demo, we're cheating a bit by storing the ID directly as a rune string?
-	// Wait, in Login I did string(rune(user.ID)). That's probably not right for an int ID.
-	// Let's fix Login to use strconv.Itoa and here strconv.Atoi
 
-	// Actually, let's fix the helper function to assume it's a string of the int
-	id, _ := strconv.Atoi(cookie.Value)
+	userIDStr, err := auth.VerifyCookie(cookie.Value)
+	if err != nil {
+		return 0
+	}
+
+	id, _ := strconv.Atoi(userIDStr)
 	return id
 }

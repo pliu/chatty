@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/pliu/chatty/internal/auth"
 	"github.com/pliu/chatty/internal/models"
 	"github.com/pliu/chatty/internal/store/sqlstore"
 	"golang.org/x/crypto/bcrypt"
@@ -98,6 +99,24 @@ func TestLogin(t *testing.T) {
 	cookies := rr.Result().Cookies()
 	if len(cookies) == 0 {
 		t.Error("Expected cookies to be set")
+	}
+
+	var userIDCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == "user_id" {
+			userIDCookie = c
+			break
+		}
+	}
+
+	if userIDCookie == nil {
+		t.Error("Expected user_id cookie to be set")
+	} else {
+		// Verify signature
+		_, err := auth.VerifyCookie(userIDCookie.Value)
+		if err != nil {
+			t.Errorf("Cookie verification failed: %v", err)
+		}
 	}
 
 	// Verify response body contains keys

@@ -208,6 +208,32 @@ func (s *SQLStore) GetChatParticipants(chatID int) ([]models.User, error) {
 	return users, nil
 }
 
+func (s *SQLStore) GetChatOwner(chatID int) (int, error) {
+	var ownerID int
+	query := s.rebind("SELECT owner_id FROM chats WHERE id = ?")
+	err := s.db.QueryRow(query, chatID).Scan(&ownerID)
+	return ownerID, err
+}
+
+func (s *SQLStore) DeleteChat(chatID int) error {
+	// Delete messages first (foreign key constraint)
+	query := s.rebind("DELETE FROM messages WHERE chat_id = ?")
+	if _, err := s.db.Exec(query, chatID); err != nil {
+		return err
+	}
+
+	// Delete participants
+	query = s.rebind("DELETE FROM participants WHERE chat_id = ?")
+	if _, err := s.db.Exec(query, chatID); err != nil {
+		return err
+	}
+
+	// Delete chat
+	query = s.rebind("DELETE FROM chats WHERE id = ?")
+	_, err := s.db.Exec(query, chatID)
+	return err
+}
+
 func (s *SQLStore) SaveMessage(chatID, userID int, content string) error {
 	query := s.rebind("INSERT INTO messages (chat_id, user_id, content) VALUES (?, ?, ?)")
 	_, err := s.db.Exec(query, chatID, userID, content)

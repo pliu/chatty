@@ -145,6 +145,19 @@ button:hover {
     align-items: center;
 }
 
+.chat-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.delete-btn {
+    background-color: #dc3545;
+}
+
+.delete-btn:hover {
+    background-color: #c82333;
+}
+
 #messages {
     flex: 1;
     padding: 1rem;

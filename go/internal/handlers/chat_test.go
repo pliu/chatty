@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+	"github.com/pliu/chatty/internal/auth"
+	"github.com/pliu/chatty/internal/middleware"
 	"github.com/pliu/chatty/internal/models"
 	"github.com/pliu/chatty/internal/store/sqlstore"
 	"github.com/pliu/chatty/internal/ws"
@@ -26,10 +28,10 @@ func TestCreateChat(t *testing.T) {
 
 	req, _ := http.NewRequest("POST", "/chats", bytes.NewBuffer(body))
 	// Simulate logged-in user
-	req.AddCookie(&http.Cookie{Name: "user_id", Value: strconv.Itoa(user.ID)})
+	req.AddCookie(&http.Cookie{Name: "user_id", Value: auth.SignCookie(strconv.Itoa(user.ID))})
 
 	rr := httptest.NewRecorder()
-	http.HandlerFunc(handler.CreateChat).ServeHTTP(rr, req)
+	middleware.AuthMiddleware(http.HandlerFunc(handler.CreateChat)).ServeHTTP(rr, req)
 
 	if status := rr.Code; status != http.StatusCreated {
 		t.Errorf("handler returned wrong status code: got %v want %v",
@@ -66,10 +68,10 @@ func TestInviteUser(t *testing.T) {
 
 	req, _ := http.NewRequest("POST", "/chats/"+strconv.Itoa(int(chatID))+"/invite", bytes.NewBuffer(body))
 	req = mux.SetURLVars(req, map[string]string{"id": strconv.Itoa(int(chatID))})
-	req.AddCookie(&http.Cookie{Name: "user_id", Value: strconv.Itoa(owner.ID)})
+	req.AddCookie(&http.Cookie{Name: "user_id", Value: auth.SignCookie(strconv.Itoa(owner.ID))})
 
 	rr := httptest.NewRecorder()
-	http.HandlerFunc(handler.InviteUser).ServeHTTP(rr, req)
+	middleware.AuthMiddleware(http.HandlerFunc(handler.InviteUser)).ServeHTTP(rr, req)
 
 	if status := rr.Code; status != http.StatusOK {
 		t.Errorf("handler returned wrong status code: got %v want %v",
@@ -100,10 +102,10 @@ func TestGetChats(t *testing.T) {
 	handler := &ChatHandler{Store: store}
 
 	req, _ := http.NewRequest("GET", "/chats", nil)
-	req.AddCookie(&http.Cookie{Name: "user_id", Value: strconv.Itoa(user.ID)})
+	req.AddCookie(&http.Cookie{Name: "user_id", Value: auth.SignCookie(strconv.Itoa(user.ID))})
 
 	rr := httptest.NewRecorder()
-	http.HandlerFunc(handler.GetChats).ServeHTTP(rr, req)
+	middleware.AuthMiddleware(http.HandlerFunc(handler.GetChats)).ServeHTTP(rr, req)
 
 	if status := rr.Code; status != http.StatusOK {
 		t.Errorf("handler returned wrong status code: got %v want %v",

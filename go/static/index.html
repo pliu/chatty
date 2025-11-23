@@ -54,7 +54,11 @@
                 <div id="active-chat" style="display: none;">
                     <div class="chat-header">
                         <h3 id="active-chat-name"></h3>
-                        <button onclick="showInvite()">Invite User</button>
+                        <div class="chat-actions">
+                            <button onclick="showInvite()">Invite User</button>
+                            <button id="delete-chat-btn" onclick="deleteChat()" style="display: none;"
+                                class="delete-btn">Delete Chat</button>
+                        </div>
                     </div>
                     <div id="messages"></div>
                     <form id="message-form" onsubmit="sendMessage(event)">

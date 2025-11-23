@@ -1,4 +1,5 @@
 let currentUser = null;
+let currentUserID = null;
 let currentChat = null;
 let ws = null;
 // Check for existing session
@@ -150,6 +151,7 @@ async function handleLogin(e) {
         if (res.ok) {
             const me = await res.json();
             currentUser = me.username;
+            currentUserID = me.id;
 
             if (me.encrypted_private_key) {
                 try {
@@ -272,6 +274,15 @@ async function selectChat(chat) {
     document.getElementById('active-chat').style.display = 'flex';
     document.getElementById('participants-sidebar').style.display = 'flex';
     document.getElementById('active-chat-name').textContent = chat.name;
+
+    // Show delete button if owner
+    const deleteBtn = document.getElementById('delete-chat-btn');
+    if (chat.owner_id === currentUserID) {
+        deleteBtn.style.display = 'block';
+    } else {
+        deleteBtn.style.display = 'none';
+    }
+
     document.getElementById('messages').innerHTML = '';
 
     // Update active state in sidebar
@@ -340,6 +351,35 @@ function showCreateChat() {
 
 function showInvite() {
     document.getElementById('invite-modal').style.display = 'block';
+}
+
+async function deleteChat() {
+    if (!currentChat) return;
+
+    if (!confirm(`Are you sure you want to delete chat "${currentChat.name}"? This action cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`/chats/${currentChat.id}`, {
+            method: 'DELETE'
+        });
+
+        if (res.ok) {
+            // UI update will be handled by WebSocket 'chat_deleted' event
+            // But we can optimistically clear the view
+            document.getElementById('active-chat').style.display = 'none';
+            document.getElementById('no-chat-selected').style.display = 'flex';
+            document.getElementById('participants-sidebar').style.display = 'none';
+            currentChat = null;
+        } else {
+            const err = await res.text();
+            alert('Failed to delete chat: ' + err);
+        }
+    } catch (err) {
+        console.error(err);
+        alert('Error deleting chat');
+    }
 }
 
 function closeModal(id) {
@@ -659,6 +699,20 @@ function connectWS() {
             // If we're viewing a chat, refresh participants list
             if (currentChat) {
                 loadParticipants(currentChat.id, currentChat.owner_id);
+            }
+            return;
+        }
+        if (msg.type === 'chat_deleted') {
+            // Always reload the chat list to remove the deleted chat
+            loadChats();
+
+            // If the deleted chat is the one currently being viewed, clear the view
+            if (currentChat && currentChat.id === msg.chat_id) {
+                document.getElementById('active-chat').style.display = 'none';
+                document.getElementById('no-chat-selected').style.display = 'flex';
+                document.getElementById('participants-sidebar').style.display = 'none';
+                currentChat = null;
+                alert('This chat has been deleted by the owner.');
             }
             return;
         }

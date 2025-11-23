@@ -15,6 +15,8 @@ type Store interface {
 	IsParticipant(chatID, userID int) (bool, error)
 	GetUserChats(userID int) ([]models.Chat, error)
 	GetChatParticipants(chatID int) ([]models.User, error)
+	GetChatOwner(chatID int) (int, error)
+	DeleteChat(chatID int) error
 	SaveMessage(chatID, userID int, content string) error
 	GetChatMessages(chatID int) ([]models.Message, error)
 }

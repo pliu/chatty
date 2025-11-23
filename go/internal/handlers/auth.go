@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/pliu/chatty/internal/auth"
 	"github.com/pliu/chatty/internal/models"
 	"github.com/pliu/chatty/internal/store"
 	"golang.org/x/crypto/bcrypt"
@@ -72,10 +73,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set session cookie (simplified for demo)
+	// Set session cookie (signed)
 	http.SetCookie(w, &http.Cookie{
 		Name:  "user_id",
-		Value: strconv.Itoa(user.ID), // Insecure: exposing ID directly. In prod use sessions.
+		Value: auth.SignCookie(strconv.Itoa(user.ID)),
 		// Expires: time.Now().Add(24 * time.Hour), // Session cookie
 		Path: "/",
 	})

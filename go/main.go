@@ -6,10 +6,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/pliu/chatty/internal/auth"
 	"github.com/pliu/chatty/internal/handlers"
+	"github.com/pliu/chatty/internal/middleware"
 	"github.com/pliu/chatty/internal/store/sqlstore"
 	"github.com/pliu/chatty/internal/ws"
 )
@@ -38,17 +39,22 @@ func main() {
 	chatHandler := &handlers.ChatHandler{Store: store, Hub: hub}
 
 	r := mux.NewRouter()
-	r.Use(loggingMiddleware)
+	r.Use(middleware.LoggingMiddleware)
 
 	// API Endpoints
 	r.HandleFunc("/signup", authHandler.Signup).Methods("POST")
 	r.HandleFunc("/login", authHandler.Login).Methods("POST")
 	r.HandleFunc("/users/search", authHandler.SearchUsers).Methods("GET")
-	r.HandleFunc("/chats", chatHandler.CreateChat).Methods("POST")
-	r.HandleFunc("/chats", chatHandler.GetChats).Methods("GET")
-	r.HandleFunc("/chats/{id}/invite", chatHandler.InviteUser).Methods("POST")
-	r.HandleFunc("/chats/{id}/messages", chatHandler.GetChatMessages).Methods("GET")
-	r.HandleFunc("/chats/{id}/participants", chatHandler.GetChatParticipants).Methods("GET")
+
+	// Chat routes (protected)
+	chatRouter := r.PathPrefix("/chats").Subrouter()
+	chatRouter.Use(middleware.AuthMiddleware)
+	chatRouter.HandleFunc("", chatHandler.CreateChat).Methods("POST")
+	chatRouter.HandleFunc("", chatHandler.GetChats).Methods("GET")
+	chatRouter.HandleFunc("/{id}/invite", chatHandler.InviteUser).Methods("POST")
+	chatRouter.HandleFunc("/{id}/messages", chatHandler.GetChatMessages).Methods("GET")
+	chatRouter.HandleFunc("/{id}/participants", chatHandler.GetChatParticipants).Methods("GET")
+	chatRouter.HandleFunc("/{id}", chatHandler.DeleteChat).Methods("DELETE")
 
 	// WebSocket Endpoint
 	r.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +66,12 @@ func main() {
 		}
 
 		// Parse user ID
-		userID, _ := strconv.Atoi(cookie.Value)
+		userIDStr, err := auth.VerifyCookie(cookie.Value)
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		userID, _ := strconv.Atoi(userIDStr)
 
 		ws.ServeWs(hub, w, r, userID)
 	})
@@ -87,12 +98,4 @@ func main() {
 
 	log.Println("Starting server on", *addr)
 	log.Fatal(http.ListenAndServe(*addr, r))
-}
-
-func loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		log.Printf("%s %s %v", r.Method, r.URL.Path, time.Since(start))
-	})
 }

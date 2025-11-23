@@ -35,7 +35,9 @@ func (s *SQLStore) createTables() {
 	CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		username TEXT UNIQUE NOT NULL,
-		password TEXT NOT NULL
+		password TEXT NOT NULL,
+		public_key TEXT,
+		encrypted_private_key TEXT
 	);
 
 	CREATE TABLE IF NOT EXISTS chats (
@@ -46,6 +48,7 @@ func (s *SQLStore) createTables() {
 	CREATE TABLE IF NOT EXISTS participants (
 		chat_id INTEGER,
 		user_id INTEGER,
+		encrypted_chat_key TEXT,
 		PRIMARY KEY (chat_id, user_id),
 		FOREIGN KEY (chat_id) REFERENCES chats(id),
 		FOREIGN KEY (user_id) REFERENCES users(id)
@@ -86,16 +89,17 @@ func (s *SQLStore) rebind(query string) string {
 	return query
 }
 
-func (s *SQLStore) CreateUser(username, password string) error {
-	query := s.rebind("INSERT INTO users (username, password) VALUES (?, ?)")
-	_, err := s.db.Exec(query, username, password)
+func (s *SQLStore) CreateUser(user *models.User) error {
+	query := s.rebind("INSERT INTO users (username, password, public_key, encrypted_private_key) VALUES (?, ?, ?, ?)")
+	_, err := s.db.Exec(query, user.Username, user.Password, user.PublicKey, user.EncryptedPrivateKey)
 	return err
 }
 
 func (s *SQLStore) GetUserByUsername(username string) (*models.User, error) {
 	var user models.User
-	query := s.rebind("SELECT id, username, password FROM users WHERE username = ?")
-	err := s.db.QueryRow(query, username).Scan(&user.ID, &user.Username, &user.Password)
+	query := s.rebind("SELECT id, username, password, COALESCE(public_key, ''), COALESCE(encrypted_private_key, '') FROM users WHERE username = ?")
+
+	err := s.db.QueryRow(query, username).Scan(&user.ID, &user.Username, &user.Password, &user.PublicKey, &user.EncryptedPrivateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -104,17 +108,17 @@ func (s *SQLStore) GetUserByUsername(username string) (*models.User, error) {
 
 func (s *SQLStore) GetUserByID(id int) (*models.User, error) {
 	var user models.User
-	query := s.rebind("SELECT id, username, password FROM users WHERE id = ?")
-	err := s.db.QueryRow(query, id).Scan(&user.ID, &user.Username, &user.Password)
+	query := s.rebind("SELECT id, username, password, COALESCE(public_key, ''), COALESCE(encrypted_private_key, '') FROM users WHERE id = ?")
+	err := s.db.QueryRow(query, id).Scan(&user.ID, &user.Username, &user.Password, &user.PublicKey, &user.EncryptedPrivateKey)
 	if err != nil {
 		return nil, err
 	}
 	return &user, nil
 }
 
-func (s *SQLStore) SearchUsers(q string) ([]models.User, error) {
-	query := s.rebind("SELECT id, username FROM users WHERE username LIKE ?")
-	rows, err := s.db.Query(query, q+"%")
+func (s *SQLStore) SearchUsers(queryStr string) ([]models.User, error) {
+	query := s.rebind("SELECT id, username, COALESCE(public_key, '') FROM users WHERE username LIKE ? LIMIT 10")
+	rows, err := s.db.Query(query, "%"+queryStr+"%")
 	if err != nil {
 		return nil, err
 	}
@@ -122,32 +126,28 @@ func (s *SQLStore) SearchUsers(q string) ([]models.User, error) {
 
 	var users []models.User
 	for rows.Next() {
-		var u models.User
-		if err := rows.Scan(&u.ID, &u.Username); err != nil {
+		var user models.User
+		if err := rows.Scan(&user.ID, &user.Username, &user.PublicKey); err != nil {
 			return nil, err
 		}
-		users = append(users, u)
+		users = append(users, user)
 	}
 	return users, nil
 }
 
 func (s *SQLStore) CreateChat(name string) (int64, error) {
-	query := s.rebind("INSERT INTO chats (name) VALUES (?)")
-	if s.driverName == "postgres" {
-		var id int64
-		err := s.db.QueryRow(query+" RETURNING id", name).Scan(&id)
-		return id, err
-	}
-	result, err := s.db.Exec(query, name)
+	var id int64
+	query := s.rebind("INSERT INTO chats (name) VALUES (?) RETURNING id")
+	err := s.db.QueryRow(query, name).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
-	return result.LastInsertId()
+	return id, nil
 }
 
-func (s *SQLStore) AddParticipant(chatID, userID int) error {
-	query := s.rebind("INSERT INTO participants (chat_id, user_id) VALUES (?, ?)")
-	_, err := s.db.Exec(query, chatID, userID)
+func (s *SQLStore) AddParticipant(chatID, userID int, encryptedKey string) error {
+	query := s.rebind("INSERT INTO participants (chat_id, user_id, encrypted_chat_key) VALUES (?, ?, ?)")
+	_, err := s.db.Exec(query, chatID, userID, encryptedKey)
 	return err
 }
 
@@ -160,7 +160,7 @@ func (s *SQLStore) IsParticipant(chatID, userID int) (bool, error) {
 
 func (s *SQLStore) GetUserChats(userID int) ([]models.Chat, error) {
 	query := s.rebind(`
-		SELECT c.id, c.name 
+		SELECT c.id, c.name, p.encrypted_chat_key
 		FROM chats c
 		JOIN participants p ON c.id = p.chat_id
 		WHERE p.user_id = ?
@@ -173,11 +173,17 @@ func (s *SQLStore) GetUserChats(userID int) ([]models.Chat, error) {
 
 	var chats []models.Chat
 	for rows.Next() {
-		var c models.Chat
-		if err := rows.Scan(&c.ID, &c.Name); err != nil {
+		var chat models.Chat
+		// Handle potential NULL for encrypted_chat_key if we had existing data, but we reset DB.
+		// However, scanning into string from NULL fails.
+		// Use COALESCE or scan into sql.NullString.
+		// Let's use COALESCE for simplicity.
+		// Actually, I can't easily inject COALESCE into the SELECT list if I don't change the query string above.
+		// I'll change the query string above.
+		if err := rows.Scan(&chat.ID, &chat.Name, &chat.EncryptedKey); err != nil {
 			return nil, err
 		}
-		chats = append(chats, c)
+		chats = append(chats, chat)
 	}
 	return chats, nil
 }

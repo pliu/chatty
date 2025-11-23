@@ -2,6 +2,8 @@ package sqlstore
 
 import (
 	"testing"
+
+	"github.com/pliu/chatty/internal/models"
 )
 
 func TestCreateChat(t *testing.T) {
@@ -22,11 +24,11 @@ func TestAddParticipant(t *testing.T) {
 	SetupTestDB(t)
 	defer TeardownTestDB()
 
-	testStore.CreateUser("user1", "pass")
+	testStore.CreateUser(&models.User{Username: "user1", Password: "pass"})
 	chatID, _ := testStore.CreateChat("Chat 1")
 	user, _ := testStore.GetUserByUsername("user1")
 
-	err := testStore.AddParticipant(int(chatID), user.ID)
+	err := testStore.AddParticipant(int(chatID), user.ID, "encrypted_key_mock")
 	if err != nil {
 		t.Errorf("Failed to add participant: %v", err)
 	}
@@ -45,7 +47,7 @@ func TestSaveMessage(t *testing.T) {
 	SetupTestDB(t)
 	defer TeardownTestDB()
 
-	testStore.CreateUser("user1", "pass")
+	testStore.CreateUser(&models.User{Username: "user1", Password: "pass"})
 	chatID, _ := testStore.CreateChat("Chat 1")
 	user, _ := testStore.GetUserByUsername("user1")
 

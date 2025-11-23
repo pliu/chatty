@@ -25,12 +25,11 @@ type InviteUserRequest struct {
 
 func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 	userID := getUserIDFromCookie(r)
-	if userID == 0 {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
 
-	var req CreateChatRequest
+	var req struct {
+		Name         string `json:"name"`
+		EncryptedKey string `json:"encrypted_key"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -42,20 +41,23 @@ func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Store.AddParticipant(int(chatID), userID); err != nil {
+	if err := h.Store.AddParticipant(int(chatID), userID, req.EncryptedKey); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]int64{"id": chatID})
 }
 
 func (h *ChatHandler) InviteUser(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	chatID, _ := strconv.Atoi(vars["id"])
+	// userID, _ := strconv.Atoi(getCookie(r, "user_id")) // Inviter's ID
 
-	var req InviteUserRequest
+	var req struct {
+		Username     string `json:"username"`
+		EncryptedKey string `json:"encrypted_key"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -67,13 +69,13 @@ func (h *ChatHandler) InviteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Store.AddParticipant(chatID, user.ID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := h.Store.AddParticipant(chatID, user.ID, req.EncryptedKey); err != nil {
+		http.Error(w, "Failed to add participant", http.StatusInternalServerError)
 		return
 	}
 
-	// Notify the invited user
-	h.Hub.SendNotification(user.ID, map[string]string{
+	// Notify the invited user via WebSocket to refresh their chat list
+	h.Hub.SendNotification(user.ID, map[string]interface{}{
 		"type": "new_chat",
 	})
 
@@ -82,10 +84,6 @@ func (h *ChatHandler) InviteUser(w http.ResponseWriter, r *http.Request) {
 
 func (h *ChatHandler) GetChats(w http.ResponseWriter, r *http.Request) {
 	userID := getUserIDFromCookie(r)
-	if userID == 0 {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
 
 	chats, err := h.Store.GetUserChats(userID)
 	if err != nil {

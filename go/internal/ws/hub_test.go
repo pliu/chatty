@@ -4,15 +4,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pliu/chatty/internal/models"
 	"github.com/pliu/chatty/internal/store/sqlstore"
 )
 
 func TestHubRun(t *testing.T) {
 	store, _ := sqlstore.New("sqlite3", ":memory:")
-	store.CreateUser("user1", "pass")
+	store.CreateUser(&models.User{Username: "user1", Password: "pass"})
 	user, _ := store.GetUserByUsername("user1")
 	chatID, _ := store.CreateChat("Test Chat")
-	store.AddParticipant(int(chatID), user.ID)
+	store.AddParticipant(int(chatID), user.ID, "key")
 
 	hub := NewHub(store)
 	go hub.Run()

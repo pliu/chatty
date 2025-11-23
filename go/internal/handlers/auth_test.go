@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/pliu/chatty/internal/models"
 	"github.com/pliu/chatty/internal/store/sqlstore"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -20,9 +21,11 @@ func TestSignup(t *testing.T) {
 
 	handler := &AuthHandler{Store: store}
 
-	creds := Credentials{
-		Username: "testuser",
-		Password: "password123",
+	creds := map[string]string{
+		"username":              "testuser",
+		"password":              "password123",
+		"public_key":            "mock_public_key",
+		"encrypted_private_key": "mock_private_key",
 	}
 	body, _ := json.Marshal(creds)
 
@@ -37,6 +40,15 @@ func TestSignup(t *testing.T) {
 	if status := rr.Code; status != http.StatusCreated {
 		t.Errorf("handler returned wrong status code: got %v want %v",
 			status, http.StatusCreated)
+	}
+
+	// Verify user was created with keys
+	user, _ := store.GetUserByUsername("testuser")
+	if user.PublicKey != "mock_public_key" {
+		t.Errorf("Expected public key 'mock_public_key', got '%s'", user.PublicKey)
+	}
+	if user.EncryptedPrivateKey != "mock_private_key" {
+		t.Errorf("Expected encrypted private key 'mock_private_key', got '%s'", user.EncryptedPrivateKey)
 	}
 
 	// Test duplicate user
@@ -55,7 +67,13 @@ func TestLogin(t *testing.T) {
 	handler := &AuthHandler{Store: store}
 
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
-	store.CreateUser("testuser", string(hashedPassword))
+
+	store.CreateUser(&models.User{
+		Username:            "testuser",
+		Password:            string(hashedPassword),
+		PublicKey:           "mock_public_key",
+		EncryptedPrivateKey: "mock_private_key",
+	})
 
 	creds := Credentials{
 		Username: "testuser",
@@ -80,5 +98,18 @@ func TestLogin(t *testing.T) {
 	cookies := rr.Result().Cookies()
 	if len(cookies) == 0 {
 		t.Error("Expected cookies to be set")
+	}
+
+	// Verify response body contains keys
+	var user models.User
+	if err := json.NewDecoder(rr.Body).Decode(&user); err != nil {
+		t.Fatal(err)
+	}
+
+	if user.PublicKey != "mock_public_key" {
+		t.Errorf("Expected public key 'mock_public_key', got '%s'", user.PublicKey)
+	}
+	if user.EncryptedPrivateKey != "mock_private_key" {
+		t.Errorf("Expected encrypted private key 'mock_private_key', got '%s'", user.EncryptedPrivateKey)
 	}
 }

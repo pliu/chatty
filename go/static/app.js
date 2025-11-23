@@ -2,49 +2,176 @@ let currentUser = null;
 let currentChat = null;
 let ws = null;
 // Check for existing session
-window.onload = function () {
-    const cookies = document.cookie.split(';');
-    let username = null;
-    for (let cookie of cookies) {
-        const [name, value] = cookie.trim().split('=');
-        if (name === 'username') {
-            username = value;
-            break;
-        }
-    }
+// We do NOT auto-login because we need the password to decrypt the private key.
+// If the page is refreshed, the memory is cleared, so the user must log in again.
+document.getElementById('auth-section').style.display = 'flex';
+document.getElementById('chat-section').style.display = 'none';
+showTab('login');
 
-    if (username) {
-        currentUser = username;
-        document.getElementById('auth-section').style.display = 'none';
-        document.getElementById('chat-section').style.display = 'flex';
-        document.getElementById('current-username').textContent = username;
-        loadChats();
-        connectWS();
-    }
-};
 // Auth
 function showTab(tab) {
     document.getElementById('login-form').style.display = tab === 'login' ? 'flex' : 'none';
     document.getElementById('signup-form').style.display = tab === 'signup' ? 'flex' : 'none';
 }
 
+async function hashPassword(password) {
+    const msgBuffer = new TextEncoder().encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+let currentChatID = null;
+let chatKeys = {}; // Map chatID -> decrypted symmetric key
+let sessionPrivateKey = null; // CryptoKey object for ECDH
+
+// Helper functions for base64 encoding/decoding
+function toBase64(buffer) {
+    return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+}
+
+function fromBase64(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+}
+
+// Generate ECDH key pair for asymmetric encryption
+async function generateKeyPair() {
+    return await crypto.subtle.generateKey(
+        {
+            name: "ECDH",
+            namedCurve: "P-256"
+        },
+        true, // extractable
+        ["deriveKey", "deriveBits"]
+    );
+}
+
+// Derive encryption key from password using PBKDF2
+async function deriveKeyFromPassword(password, salt) {
+    const passwordKey = await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(password),
+        "PBKDF2",
+        false,
+        ["deriveKey"]
+    );
+
+    return await crypto.subtle.deriveKey(
+        {
+            name: "PBKDF2",
+            salt: salt,
+            iterations: 100000,
+            hash: "SHA-256"
+        },
+        passwordKey,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt", "decrypt"]
+    );
+}
+
+// Encrypt private key with password
+async function encryptPrivateKey(privateKey, password) {
+    // Export the private key to raw format
+    const privateKeyRaw = await crypto.subtle.exportKey("jwk", privateKey);
+    const privateKeyBytes = new TextEncoder().encode(JSON.stringify(privateKeyRaw));
+
+    // Generate salt and IV
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+
+    // Derive encryption key from password
+    const encryptionKey = await deriveKeyFromPassword(password, salt);
+
+    // Encrypt the private key
+    const encrypted = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv },
+        encryptionKey,
+        privateKeyBytes
+    );
+
+    // Combine salt + IV + ciphertext
+    const combined = new Uint8Array(salt.length + iv.length + encrypted.byteLength);
+    combined.set(salt, 0);
+    combined.set(iv, salt.length);
+    combined.set(new Uint8Array(encrypted), salt.length + iv.length);
+
+    return toBase64(combined);
+}
+
+// Decrypt private key with password
+async function decryptPrivateKey(encryptedData, password) {
+    const combined = fromBase64(encryptedData);
+
+    // Extract salt, IV, and ciphertext
+    const salt = combined.slice(0, 16);
+    const iv = combined.slice(16, 28);
+    const ciphertext = combined.slice(28);
+
+    // Derive decryption key from password
+    const decryptionKey = await deriveKeyFromPassword(password, salt);
+
+    // Decrypt the private key
+    const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: iv },
+        decryptionKey,
+        ciphertext
+    );
+
+    // Import the private key back
+    const privateKeyJwk = JSON.parse(new TextDecoder().decode(decrypted));
+    return await crypto.subtle.importKey(
+        "jwk",
+        privateKeyJwk,
+        { name: "ECDH", namedCurve: "P-256" },
+        true,
+        ["deriveKey", "deriveBits"]
+    );
+}
+
 async function handleLogin(e) {
     e.preventDefault();
     const username = document.getElementById('login-username').value;
-    const password = document.getElementById('login-password').value;
+    const passwordRaw = document.getElementById('login-password').value;
 
     try {
+        const passwordHash = await hashPassword(passwordRaw);
         const res = await fetch('/login', {
             method: 'POST',
-            body: JSON.stringify({ username, password }),
+            body: JSON.stringify({ username, password: passwordHash }),
             headers: { 'Content-Type': 'application/json' }
         });
 
         if (res.ok) {
-            currentUser = username;
+            const me = await res.json();
+            currentUser = me.username;
+
+            if (me.encrypted_private_key) {
+                try {
+                    // Decrypt private key
+                    sessionPrivateKey = await decryptPrivateKey(me.encrypted_private_key, passwordRaw);
+                    console.log("Private key decrypted and cached.");
+                } catch (e) {
+                    console.error("Failed to decrypt private key:", e);
+                    alert("Failed to decrypt private key. Wrong password?");
+                    return;
+                }
+
+                localStorage.setItem('public_key', me.public_key);
+            }
+
+            document.getElementById('login-username').value = '';
+            document.getElementById('login-password').value = '';
+
             document.getElementById('auth-section').style.display = 'none';
             document.getElementById('chat-section').style.display = 'flex';
-            document.getElementById('current-username').textContent = username;
+            document.getElementById('current-username').textContent = currentUser;
+
             loadChats();
             connectWS();
         } else {
@@ -59,17 +186,36 @@ async function handleLogin(e) {
 async function handleSignup(e) {
     e.preventDefault();
     const username = document.getElementById('signup-username').value;
-    const password = document.getElementById('signup-password').value;
+    const passwordRaw = document.getElementById('signup-password').value;
 
     try {
+        const passwordHash = await hashPassword(passwordRaw);
+
+        // Generate ECDH key pair
+        const keyPair = await generateKeyPair();
+
+        // Export public key
+        const publicKeyRaw = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+        const publicKey = toBase64(new TextEncoder().encode(JSON.stringify(publicKeyRaw)));
+
+        // Encrypt private key with password
+        const encryptedPrivateKey = await encryptPrivateKey(keyPair.privateKey, passwordRaw);
+
         const res = await fetch('/signup', {
             method: 'POST',
-            body: JSON.stringify({ username, password }),
+            body: JSON.stringify({
+                username,
+                password: passwordHash,
+                public_key: publicKey,
+                encrypted_private_key: encryptedPrivateKey
+            }),
             headers: { 'Content-Type': 'application/json' }
         });
 
         if (res.ok) {
             alert('Signup successful! Please login.');
+            document.getElementById('signup-username').value = '';
+            document.getElementById('signup-password').value = '';
             showTab('login');
         } else {
             alert('Signup failed');
@@ -93,15 +239,27 @@ async function loadChats() {
         const chats = await res.json();
         const list = document.getElementById('chat-list');
         list.innerHTML = '';
+        chatKeys = {}; // Reset keys
 
         if (chats) {
-            chats.forEach(chat => {
+            for (const chat of chats) {
+                // Decrypt chat key if we have it
+                if (chat.encrypted_key && sessionPrivateKey) {
+                    try {
+                        const decryptedKey = await decryptAsymmetric(chat.encrypted_key, sessionPrivateKey);
+                        chatKeys[chat.id] = decryptedKey;
+                        console.log(`Chat ${chat.id} (${chat.name}): Decrypted symmetric key:`, toBase64(decryptedKey));
+                    } catch (e) {
+                        console.error(`Failed to decrypt key for chat ${chat.id}:`, e);
+                    }
+                }
+
                 const div = document.createElement('div');
                 div.className = 'chat-item';
                 div.textContent = chat.name;
                 div.onclick = () => selectChat(chat);
                 list.appendChild(div);
-            });
+            }
         }
     } catch (err) {
         console.error(err);
@@ -149,49 +307,200 @@ function closeModal(id) {
     document.getElementById(id).style.display = 'none';
 }
 
+async function generateSymKey() {
+    return crypto.getRandomValues(new Uint8Array(32));
+}
+
+async function encryptAsymmetric(data, publicKeyBase64) {
+    // Import the recipient's public key
+    const publicKeyBytes = fromBase64(publicKeyBase64);
+    const publicKeyJwk = JSON.parse(new TextDecoder().decode(publicKeyBytes));
+    const recipientPublicKey = await crypto.subtle.importKey(
+        "jwk",
+        publicKeyJwk,
+        { name: "ECDH", namedCurve: "P-256" },
+        true,
+        []
+    );
+
+    // Generate an ephemeral key pair for this encryption
+    const ephemeralKeyPair = await crypto.subtle.generateKey(
+        { name: "ECDH", namedCurve: "P-256" },
+        true,
+        ["deriveKey"]
+    );
+
+    // Derive a shared secret using ECDH
+    const sharedSecret = await crypto.subtle.deriveKey(
+        {
+            name: "ECDH",
+            public: recipientPublicKey
+        },
+        ephemeralKeyPair.privateKey,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt"]
+    );
+
+    // Encrypt the data with the shared secret
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv },
+        sharedSecret,
+        data
+    );
+
+    // Export the ephemeral public key
+    const ephemeralPublicKeyJwk = await crypto.subtle.exportKey("jwk", ephemeralKeyPair.publicKey);
+    const ephemeralPublicKeyBytes = new TextEncoder().encode(JSON.stringify(ephemeralPublicKeyJwk));
+
+    // Combine: ephemeralPublicKeyLength (2 bytes) + ephemeralPublicKey + IV (12 bytes) + ciphertext
+    const ephemeralKeyLength = ephemeralPublicKeyBytes.length;
+    const combined = new Uint8Array(2 + ephemeralKeyLength + iv.length + encrypted.byteLength);
+
+    // Store length as 2-byte big-endian
+    combined[0] = (ephemeralKeyLength >> 8) & 0xFF;
+    combined[1] = ephemeralKeyLength & 0xFF;
+    combined.set(ephemeralPublicKeyBytes, 2);
+    combined.set(iv, 2 + ephemeralKeyLength);
+    combined.set(new Uint8Array(encrypted), 2 + ephemeralKeyLength + iv.length);
+
+    return toBase64(combined);
+}
+
+async function decryptAsymmetric(encryptedData, privateKey) {
+    // Parse the encrypted data
+    const combined = fromBase64(encryptedData);
+
+    // Extract ephemeral public key length (2 bytes, big-endian)
+    const ephemeralKeyLength = (combined[0] << 8) | combined[1];
+
+    // Extract components
+    const ephemeralPublicKeyBytes = combined.slice(2, 2 + ephemeralKeyLength);
+    const iv = combined.slice(2 + ephemeralKeyLength, 2 + ephemeralKeyLength + 12);
+    const ciphertext = combined.slice(2 + ephemeralKeyLength + 12);
+
+    // Import the ephemeral public key
+    const ephemeralPublicKeyJwk = JSON.parse(new TextDecoder().decode(ephemeralPublicKeyBytes));
+    const ephemeralPublicKey = await crypto.subtle.importKey(
+        "jwk",
+        ephemeralPublicKeyJwk,
+        { name: "ECDH", namedCurve: "P-256" },
+        true,
+        []
+    );
+
+    // Derive the same shared secret using our private key and the ephemeral public key
+    const sharedSecret = await crypto.subtle.deriveKey(
+        {
+            name: "ECDH",
+            public: ephemeralPublicKey
+        },
+        privateKey,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["decrypt"]
+    );
+
+    // Decrypt the data
+    const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: iv },
+        sharedSecret,
+        ciphertext
+    );
+
+    return new Uint8Array(decrypted);
+}
+
 async function handleCreateChat(e) {
     e.preventDefault();
     const name = document.getElementById('new-chat-name').value;
 
     try {
+        // Generate symmetric key for the chat
+        const symKey = await generateSymKey();
+        console.log('Generated symmetric key:', symKey);
+
+        const myPublicKey = localStorage.getItem('public_key');
+        if (!myPublicKey) {
+            alert('Public key not found. Please login again.');
+            return;
+        }
+        console.log('My public key:', myPublicKey);
+
+        const encryptedKey = await encryptAsymmetric(symKey, myPublicKey);
+        console.log('Encrypted key:', encryptedKey);
+
+        const payload = { name, encrypted_key: encryptedKey };
+        console.log('Sending payload:', payload);
+
         const res = await fetch('/chats', {
             method: 'POST',
-            body: JSON.stringify({ name }),
+            body: JSON.stringify(payload),
             headers: { 'Content-Type': 'application/json' }
         });
 
+        console.log('Response status:', res.status);
         if (res.ok) {
+            document.getElementById('new-chat-name').value = '';
             closeModal('create-chat-modal');
             loadChats();
-            document.getElementById('new-chat-name').value = '';
         } else {
-            alert('Failed to create chat');
+            const errorText = await res.text();
+            console.error('Server error:', errorText);
+            alert('Failed to create chat: ' + errorText);
         }
     } catch (err) {
-        console.error(err);
+        console.error('Error in handleCreateChat:', err);
+        alert('Error creating chat: ' + err.message);
     }
 }
 
-async function handleInvite(e) {
+async function handleInviteUser(e) {
     e.preventDefault();
     const username = document.getElementById('invite-username').value;
+    const chatID = currentChat.id;
 
     try {
-        const res = await fetch(`/chats/${currentChat.id}/invite`, {
+        // 1. Get invitee's public key
+        const searchRes = await fetch(`/users/search?q=${username}`);
+        const users = await searchRes.json();
+        const invitee = users.find(u => u.username === username);
+        if (!invitee || !invitee.public_key) {
+            alert('User not found or has no public key');
+            return;
+        }
+
+        // 2. Get the chat's decrypted symmetric key
+        const decryptedChatKey = chatKeys[chatID];
+        if (!decryptedChatKey) {
+            alert('Chat key not found (or not decrypted). Cannot invite.');
+            return;
+        }
+
+        console.log('Inviting user to chat:', chatID);
+        console.log('Decrypted symmetric key to share:', toBase64(decryptedChatKey));
+
+        // 3. Encrypt the symmetric key for the invitee using their public key
+        const encryptedForInvitee = await encryptAsymmetric(decryptedChatKey, invitee.public_key);
+        console.log('Encrypted for invitee:', encryptedForInvitee);
+
+        const res = await fetch(`/chats/${chatID}/invite`, {
             method: 'POST',
-            body: JSON.stringify({ username }),
+            body: JSON.stringify({ username, encrypted_key: encryptedForInvitee }),
             headers: { 'Content-Type': 'application/json' }
         });
 
         if (res.ok) {
-            alert('User invited!');
-            closeModal('invite-modal');
             document.getElementById('invite-username').value = '';
+            alert('User invited');
+            closeModal('invite-modal');
         } else {
             alert('Failed to invite user');
         }
     } catch (err) {
         console.error(err);
+        alert('Error inviting user');
     }
 }
 

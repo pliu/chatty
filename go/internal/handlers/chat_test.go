@@ -9,18 +9,19 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+	"github.com/pliu/chatty/internal/models"
 	"github.com/pliu/chatty/internal/store/sqlstore"
 	"github.com/pliu/chatty/internal/ws"
 )
 
 func TestCreateChat(t *testing.T) {
 	store, _ := sqlstore.New("sqlite3", ":memory:")
-	store.CreateUser("user1", "pass")
+	store.CreateUser(&models.User{Username: "user1", Password: "pass"})
 	user, _ := store.GetUserByUsername("user1")
 
 	handler := &ChatHandler{Store: store}
 
-	reqBody := map[string]string{"name": "Test Chat"}
+	reqBody := map[string]string{"name": "Test Chat", "encrypted_key": "mock_key"}
 	body, _ := json.Marshal(reqBody)
 
 	req, _ := http.NewRequest("POST", "/chats", bytes.NewBuffer(body))
@@ -47,12 +48,12 @@ func TestCreateChat(t *testing.T) {
 
 func TestInviteUser(t *testing.T) {
 	store, _ := sqlstore.New("sqlite3", ":memory:")
-	store.CreateUser("owner", "pass")
-	store.CreateUser("invitee", "pass")
+	store.CreateUser(&models.User{Username: "owner", Password: "pass"})
+	store.CreateUser(&models.User{Username: "invitee", Password: "pass"})
 
 	chatID, _ := store.CreateChat("Test Chat")
 	owner, _ := store.GetUserByUsername("owner")
-	store.AddParticipant(int(chatID), owner.ID)
+	store.AddParticipant(int(chatID), owner.ID, "key")
 
 	// Mock Hub (or use real one, it's safe for tests if we don't attach clients)
 	hub := ws.NewHub(store)
@@ -60,7 +61,7 @@ func TestInviteUser(t *testing.T) {
 
 	handler := &ChatHandler{Store: store, Hub: hub}
 
-	reqBody := map[string]string{"username": "invitee"}
+	reqBody := map[string]string{"username": "invitee", "encrypted_key": "mock_key_invitee"}
 	body, _ := json.Marshal(reqBody)
 
 	req, _ := http.NewRequest("POST", "/chats/"+strconv.Itoa(int(chatID))+"/invite", bytes.NewBuffer(body))
@@ -85,7 +86,7 @@ func TestInviteUser(t *testing.T) {
 
 func TestGetChats(t *testing.T) {
 	store, _ := sqlstore.New("sqlite3", ":memory:")
-	store.CreateUser("user1", "pass")
+	store.CreateUser(&models.User{Username: "user1", Password: "pass"})
 	user, _ := store.GetUserByUsername("user1")
 
 	store.CreateChat("Chat 1")
@@ -94,7 +95,7 @@ func TestGetChats(t *testing.T) {
 	store.GetUserChats(user.ID) // Should be 0 initially
 
 	chatID, _ := store.CreateChat("My Chat")
-	store.AddParticipant(int(chatID), user.ID)
+	store.AddParticipant(int(chatID), user.ID, "key")
 
 	handler := &ChatHandler{Store: store}
 

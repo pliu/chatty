@@ -82,7 +82,7 @@
         <div class="modal-content">
             <span class="close" onclick="closeModal('invite-modal')">&times;</span>
             <h2>Invite User</h2>
-            <form onsubmit="handleInvite(event)" autocomplete="off">
+            <form onsubmit="handleInviteUser(event)" autocomplete="off">
                 <div style="position: relative;">
                     <input type="text" id="invite-username" placeholder="Username to invite" required
                         oninput="handleSearchUsers(this.value)">
@@ -93,7 +93,7 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js" defer></script>
 </body>
 
 </html>

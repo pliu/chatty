@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/pliu/chatty/internal/handlers"
@@ -22,6 +23,7 @@ func main() {
 	// Connect to Postgres (running via docker-compose)
 	connStr := "user=user password=password dbname=chatty sslmode=disable host=localhost port=5432"
 	store, err := sqlstore.New("postgres", connStr)
+	// store, err := sqlstore.New("sqlite3", "chatty.db")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -35,6 +37,7 @@ func main() {
 	chatHandler := &handlers.ChatHandler{Store: store, Hub: hub}
 
 	r := mux.NewRouter()
+	r.Use(loggingMiddleware)
 
 	// API Endpoints
 	r.HandleFunc("/signup", authHandler.Signup).Methods("POST")
@@ -65,4 +68,12 @@ func main() {
 
 	log.Println("Starting server on", *addr)
 	log.Fatal(http.ListenAndServe(*addr, r))
+}
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		log.Printf("%s %s %v", r.Method, r.URL.Path, time.Since(start))
+	})
 }

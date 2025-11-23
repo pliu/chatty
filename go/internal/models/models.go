@@ -3,14 +3,17 @@ package models
 import "time"
 
 type User struct {
-	ID       int    `json:"id"`
-	Username string `json:"username"`
-	Password string `json:"-"`
+	ID                  int    `json:"id"`
+	Username            string `json:"username"`
+	Password            string `json:"-"`
+	PublicKey           string `json:"public_key"`
+	EncryptedPrivateKey string `json:"encrypted_private_key"`
 }
 
 type Chat struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	EncryptedKey string `json:"encrypted_key"`
 }
 
 type Message struct {

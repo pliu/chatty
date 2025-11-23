@@ -13,7 +13,8 @@ type User struct {
 type Chat struct {
 	ID           int    `json:"id"`
 	Name         string `json:"name"`
-	EncryptedKey string `json:"encrypted_key"`
+	OwnerID      int    `json:"owner_id"`
+	EncryptedKey string `json:"encrypted_key,omitempty"` // Per-user encrypted chat key
 }
 
 type Message struct {

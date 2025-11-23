@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -47,6 +48,7 @@ func main() {
 	r.HandleFunc("/chats", chatHandler.GetChats).Methods("GET")
 	r.HandleFunc("/chats/{id}/invite", chatHandler.InviteUser).Methods("POST")
 	r.HandleFunc("/chats/{id}/messages", chatHandler.GetChatMessages).Methods("GET")
+	r.HandleFunc("/chats/{id}/participants", chatHandler.GetChatParticipants).Methods("GET")
 
 	// WebSocket Endpoint
 	r.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
@@ -63,8 +65,25 @@ func main() {
 		ws.ServeWs(hub, w, r, userID)
 	})
 
-	// Serve static files (frontend)
-	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./static")))
+	// Serve index.html with cache-busting timestamp
+	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, "static/index.html")
+	})
+
+	// Serve static files with cache-busting headers for development
+	r.PathPrefix("/").Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Disable caching for CSS and JS files in development
+		if strings.HasSuffix(r.URL.Path, ".css") || strings.HasSuffix(r.URL.Path, ".js") {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+		}
+		http.FileServer(http.Dir("static")).ServeHTTP(w, r)
+	}))
 
 	log.Println("Starting server on", *addr)
 	log.Fatal(http.ListenAndServe(*addr, r))

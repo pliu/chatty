@@ -270,6 +270,7 @@ async function selectChat(chat) {
     currentChat = chat;
     document.getElementById('no-chat-selected').style.display = 'none';
     document.getElementById('active-chat').style.display = 'flex';
+    document.getElementById('participants-sidebar').style.display = 'flex';
     document.getElementById('active-chat-name').textContent = chat.name;
     document.getElementById('messages').innerHTML = '';
 
@@ -292,6 +293,44 @@ async function selectChat(chat) {
         }
     } catch (err) {
         console.error("Error loading messages:", err);
+    }
+
+    // Load participants
+    loadParticipants(chat.id, chat.owner_id);
+}
+
+async function loadParticipants(chatID, ownerID) {
+    try {
+        const res = await fetch(`/chats/${chatID}/participants`);
+        const participants = await res.json();
+
+        const list = document.getElementById('participants-list');
+        list.innerHTML = '';
+
+        if (participants) {
+            participants.forEach(participant => {
+                const div = document.createElement('div');
+                div.className = 'participant-item';
+                if (participant.id === ownerID) {
+                    div.classList.add('owner');
+                }
+
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = participant.username;
+                div.appendChild(nameSpan);
+
+                if (participant.id === ownerID) {
+                    const badge = document.createElement('span');
+                    badge.className = 'owner-badge';
+                    badge.textContent = 'OWNER';
+                    div.appendChild(badge);
+                }
+
+                list.appendChild(div);
+            });
+        }
+    } catch (err) {
+        console.error("Error loading participants:", err);
     }
 }
 
@@ -518,9 +557,20 @@ async function handleSearchUsers(query) {
             const res = await fetch(`/users/search?q=${encodeURIComponent(query)}`);
             const users = await res.json();
 
+            // Get current participants to filter them out
+            const participantsRes = await fetch(`/chats/${currentChat.id}/participants`);
+            const participants = await participantsRes.json();
+            const participantUsernames = new Set(participants.map(p => p.username));
+
+            // Filter out current user and existing participants
+            const filteredUsers = users.filter(u =>
+                u.username !== currentUser && !participantUsernames.has(u.username)
+            );
+
             dropdown.innerHTML = '';
-            if (users && users.length > 0) {
-                users.forEach(user => {
+
+            if (filteredUsers.length > 0) {
+                filteredUsers.forEach(user => {
                     const div = document.createElement('div');
                     div.className = 'suggestion-item';
                     div.textContent = user.username;
@@ -542,6 +592,61 @@ function selectUser(username) {
     document.getElementById('user-suggestions').style.display = 'none';
 }
 
+// Message Encryption/Decryption
+async function encryptMessage(content, symmetricKey) {
+    // Convert symmetric key (Uint8Array) to CryptoKey
+    const key = await crypto.subtle.importKey(
+        "raw",
+        symmetricKey,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt"]
+    );
+
+    // Generate IV
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+
+    // Encrypt the message
+    const contentBytes = new TextEncoder().encode(content);
+    const encrypted = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv },
+        key,
+        contentBytes
+    );
+
+    // Combine IV + ciphertext
+    const combined = new Uint8Array(iv.length + encrypted.byteLength);
+    combined.set(iv, 0);
+    combined.set(new Uint8Array(encrypted), iv.length);
+
+    return toBase64(combined);
+}
+
+async function decryptMessage(encryptedContent, symmetricKey) {
+    // Convert symmetric key (Uint8Array) to CryptoKey
+    const key = await crypto.subtle.importKey(
+        "raw",
+        symmetricKey,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["decrypt"]
+    );
+
+    // Parse encrypted data
+    const combined = fromBase64(encryptedContent);
+    const iv = combined.slice(0, 12);
+    const ciphertext = combined.slice(12);
+
+    // Decrypt the message
+    const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: iv },
+        key,
+        ciphertext
+    );
+
+    return new TextDecoder().decode(decrypted);
+}
+
 // WebSocket & Messaging
 function connectWS() {
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -551,6 +656,10 @@ function connectWS() {
         const msg = JSON.parse(event.data);
         if (msg.type === 'new_chat') {
             loadChats();
+            // If we're viewing a chat, refresh participants list
+            if (currentChat) {
+                loadParticipants(currentChat.id, currentChat.owner_id);
+            }
             return;
         }
         if (currentChat && msg.chat_id === currentChat.id) {
@@ -564,23 +673,38 @@ function connectWS() {
     };
 }
 
-function sendMessage(e) {
+async function sendMessage(e) {
     e.preventDefault();
     const input = document.getElementById('message-input');
     const content = input.value;
 
     if (ws && currentChat) {
-        const msg = {
-            chat_id: currentChat.id,
-            user_id: 0, // Backend handles this
-            content: content
-        };
-        ws.send(JSON.stringify(msg));
-        input.value = '';
+        try {
+            // Get the symmetric key for this chat
+            const symmetricKey = chatKeys[currentChat.id];
+            if (!symmetricKey) {
+                alert('Chat key not available. Cannot send encrypted message.');
+                return;
+            }
+
+            // Encrypt the message
+            const encryptedContent = await encryptMessage(content, symmetricKey);
+
+            const msg = {
+                chat_id: currentChat.id,
+                user_id: 0, // Backend handles this
+                content: encryptedContent
+            };
+            ws.send(JSON.stringify(msg));
+            input.value = '';
+        } catch (err) {
+            console.error('Error encrypting message:', err);
+            alert('Failed to encrypt message');
+        }
     }
 }
 
-function appendMessage(msg) {
+async function appendMessage(msg) {
     const div = document.createElement('div');
     const isMe = msg.username === currentUser;
     div.className = `message ${isMe ? 'sent' : 'received'}`;
@@ -593,7 +717,21 @@ function appendMessage(msg) {
     meta.textContent = `${msg.username} • ${timeStr}`;
 
     const content = document.createElement('div');
-    content.textContent = msg.content;
+
+    // Decrypt the message content
+    try {
+        const symmetricKey = chatKeys[msg.chat_id];
+        if (symmetricKey) {
+            const decryptedContent = await decryptMessage(msg.content, symmetricKey);
+            content.textContent = decryptedContent;
+        } else {
+            content.textContent = '[Encrypted - key not available]';
+            console.warn('No symmetric key available for chat:', msg.chat_id);
+        }
+    } catch (err) {
+        console.error('Error decrypting message:', err);
+        content.textContent = '[Decryption failed]';
+    }
 
     div.appendChild(meta);
     div.appendChild(content);

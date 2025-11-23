@@ -10,7 +10,7 @@ func TestCreateChat(t *testing.T) {
 	SetupTestDB(t)
 	defer TeardownTestDB()
 
-	id, err := testStore.CreateChat("General")
+	id, err := testStore.CreateChat("General", 1)
 	if err != nil {
 		t.Errorf("Failed to create chat: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestAddParticipant(t *testing.T) {
 	defer TeardownTestDB()
 
 	testStore.CreateUser(&models.User{Username: "user1", Password: "pass"})
-	chatID, _ := testStore.CreateChat("Chat 1")
+	chatID, _ := testStore.CreateChat("Chat 1", 1)
 	user, _ := testStore.GetUserByUsername("user1")
 
 	err := testStore.AddParticipant(int(chatID), user.ID, "encrypted_key_mock")
@@ -48,7 +48,7 @@ func TestSaveMessage(t *testing.T) {
 	defer TeardownTestDB()
 
 	testStore.CreateUser(&models.User{Username: "user1", Password: "pass"})
-	chatID, _ := testStore.CreateChat("Chat 1")
+	chatID, _ := testStore.CreateChat("Chat 1", 1)
 	user, _ := testStore.GetUserByUsername("user1")
 
 	err := testStore.SaveMessage(int(chatID), user.ID, "Hello")

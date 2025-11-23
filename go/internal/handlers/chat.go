@@ -35,7 +35,7 @@ func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chatID, err := h.Store.CreateChat(req.Name)
+	chatID, err := h.Store.CreateChat(req.Name, userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -69,15 +69,31 @@ func (h *ChatHandler) InviteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if user is already a participant
+	isParticipant, err := h.Store.IsParticipant(chatID, user.ID)
+	if err != nil {
+		http.Error(w, "Failed to check participant status", http.StatusInternalServerError)
+		return
+	}
+	if isParticipant {
+		http.Error(w, "User is already a participant in this chat", http.StatusConflict)
+		return
+	}
+
 	if err := h.Store.AddParticipant(chatID, user.ID, req.EncryptedKey); err != nil {
 		http.Error(w, "Failed to add participant", http.StatusInternalServerError)
 		return
 	}
 
-	// Notify the invited user via WebSocket to refresh their chat list
-	h.Hub.SendNotification(user.ID, map[string]interface{}{
-		"type": "new_chat",
-	})
+	// Notify all participants in the chat to refresh their participants list
+	participants, err := h.Store.GetChatParticipants(chatID)
+	if err == nil {
+		for _, participant := range participants {
+			h.Hub.SendNotification(participant.ID, map[string]interface{}{
+				"type": "new_chat",
+			})
+		}
+	}
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -117,6 +133,31 @@ func (h *ChatHandler) GetChatMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(messages)
+}
+
+func (h *ChatHandler) GetChatParticipants(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	chatID, _ := strconv.Atoi(vars["id"])
+
+	userID := getUserIDFromCookie(r)
+	if userID == 0 {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	isParticipant, err := h.Store.IsParticipant(chatID, userID)
+	if err != nil || !isParticipant {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	participants, err := h.Store.GetChatParticipants(chatID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(participants)
 }
 
 func getUserIDFromCookie(r *http.Request) int {

@@ -245,3 +245,52 @@ button:hover {
 .suggestion-item:hover {
     background-color: #f0f2f5;
 }
+
+/* Participants Sidebar */
+#participants-sidebar {
+    width: 200px;
+    border-left: 1px solid #ddd;
+    display: none;
+    /* Hidden by default, shown when chat is selected */
+    flex-direction: column;
+    background: #f8f9fa;
+}
+
+#participants-sidebar h4 {
+    padding: 1rem;
+    margin: 0;
+    border-bottom: 1px solid #ddd;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+#participants-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem;
+}
+
+.participant-item {
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    background: white;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.participant-item.owner {
+    background: #e6f2ff;
+    border-left: 3px solid #0084ff;
+}
+
+.owner-badge {
+    background: #0084ff;
+    color: white;
+    font-size: 0.7rem;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
+    font-weight: 600;
+}

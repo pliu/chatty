@@ -42,7 +42,8 @@ func (s *SQLStore) createTables() {
 
 	CREATE TABLE IF NOT EXISTS chats (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT NOT NULL
+		name TEXT NOT NULL,
+		owner_id INTEGER REFERENCES users(id)
 	);
 
 	CREATE TABLE IF NOT EXISTS participants (
@@ -135,10 +136,10 @@ func (s *SQLStore) SearchUsers(queryStr string) ([]models.User, error) {
 	return users, nil
 }
 
-func (s *SQLStore) CreateChat(name string) (int64, error) {
+func (s *SQLStore) CreateChat(name string, ownerID int) (int64, error) {
 	var id int64
-	query := s.rebind("INSERT INTO chats (name) VALUES (?) RETURNING id")
-	err := s.db.QueryRow(query, name).Scan(&id)
+	query := s.rebind("INSERT INTO chats (name, owner_id) VALUES (?, ?) RETURNING id")
+	err := s.db.QueryRow(query, name, ownerID).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -160,7 +161,7 @@ func (s *SQLStore) IsParticipant(chatID, userID int) (bool, error) {
 
 func (s *SQLStore) GetUserChats(userID int) ([]models.Chat, error) {
 	query := s.rebind(`
-		SELECT c.id, c.name, p.encrypted_chat_key
+		SELECT c.id, c.name, c.owner_id, p.encrypted_chat_key
 		FROM chats c
 		JOIN participants p ON c.id = p.chat_id
 		WHERE p.user_id = ?
@@ -174,18 +175,37 @@ func (s *SQLStore) GetUserChats(userID int) ([]models.Chat, error) {
 	var chats []models.Chat
 	for rows.Next() {
 		var chat models.Chat
-		// Handle potential NULL for encrypted_chat_key if we had existing data, but we reset DB.
-		// However, scanning into string from NULL fails.
-		// Use COALESCE or scan into sql.NullString.
-		// Let's use COALESCE for simplicity.
-		// Actually, I can't easily inject COALESCE into the SELECT list if I don't change the query string above.
-		// I'll change the query string above.
-		if err := rows.Scan(&chat.ID, &chat.Name, &chat.EncryptedKey); err != nil {
+		if err := rows.Scan(&chat.ID, &chat.Name, &chat.OwnerID, &chat.EncryptedKey); err != nil {
 			return nil, err
 		}
 		chats = append(chats, chat)
 	}
 	return chats, nil
+}
+
+func (s *SQLStore) GetChatParticipants(chatID int) ([]models.User, error) {
+	query := s.rebind(`
+		SELECT u.id, u.username, u.public_key, u.encrypted_private_key
+		FROM users u
+		JOIN participants p ON u.id = p.user_id
+		WHERE p.chat_id = ?
+	`)
+
+	rows, err := s.db.Query(query, chatID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []models.User
+	for rows.Next() {
+		var u models.User
+		if err := rows.Scan(&u.ID, &u.Username, &u.PublicKey, &u.EncryptedPrivateKey); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
 }
 
 func (s *SQLStore) SaveMessage(chatID, userID int, content string) error {

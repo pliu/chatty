@@ -51,7 +51,7 @@ func TestInviteUser(t *testing.T) {
 	store.CreateUser(&models.User{Username: "owner", Password: "pass"})
 	store.CreateUser(&models.User{Username: "invitee", Password: "pass"})
 
-	chatID, _ := store.CreateChat("Test Chat")
+	chatID, _ := store.CreateChat("Test Chat", 1)
 	owner, _ := store.GetUserByUsername("owner")
 	store.AddParticipant(int(chatID), owner.ID, "key")
 
@@ -89,12 +89,12 @@ func TestGetChats(t *testing.T) {
 	store.CreateUser(&models.User{Username: "user1", Password: "pass"})
 	user, _ := store.GetUserByUsername("user1")
 
-	store.CreateChat("Chat 1")
-	store.CreateChat("Chat 2")
+	_, _ = store.CreateChat("Chat 1", 1)
+	_, _ = store.CreateChat("Chat 2", 1)
 	// Add user to Chat 1 only
 	store.GetUserChats(user.ID) // Should be 0 initially
 
-	chatID, _ := store.CreateChat("My Chat")
+	chatID, _ := store.CreateChat("My Chat", 1)
 	store.AddParticipant(int(chatID), user.ID, "key")
 
 	handler := &ChatHandler{Store: store}

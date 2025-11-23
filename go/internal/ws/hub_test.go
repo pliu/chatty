@@ -12,7 +12,7 @@ func TestHubRun(t *testing.T) {
 	store, _ := sqlstore.New("sqlite3", ":memory:")
 	store.CreateUser(&models.User{Username: "user1", Password: "pass"})
 	user, _ := store.GetUserByUsername("user1")
-	chatID, _ := store.CreateChat("Test Chat")
+	chatID, _ := store.CreateChat("Test Chat", 1)
 	store.AddParticipant(int(chatID), user.ID, "key")
 
 	hub := NewHub(store)

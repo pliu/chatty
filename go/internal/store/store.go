@@ -10,10 +10,11 @@ type Store interface {
 	SearchUsers(query string) ([]models.User, error)
 
 	// Chat operations
-	CreateChat(name string) (int64, error)
+	CreateChat(name string, ownerID int) (int64, error)
 	AddParticipant(chatID, userID int, encryptedKey string) error
 	IsParticipant(chatID, userID int) (bool, error)
 	GetUserChats(userID int) ([]models.Chat, error)
+	GetChatParticipants(chatID int) ([]models.User, error)
 	SaveMessage(chatID, userID int, content string) error
 	GetChatMessages(chatID int) ([]models.Message, error)
 }

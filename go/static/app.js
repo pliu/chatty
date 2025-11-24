@@ -275,12 +275,16 @@ async function selectChat(chat) {
     document.getElementById('participants-sidebar').style.display = 'flex';
     document.getElementById('active-chat-name').textContent = chat.name;
 
-    // Show delete button if owner
+    // Show appropriate button based on ownership
     const deleteBtn = document.getElementById('delete-chat-btn');
     if (chat.owner_id === currentUserID) {
+        deleteBtn.textContent = 'Delete Chat';
+        deleteBtn.onclick = () => deleteChat(chat.id);
         deleteBtn.style.display = 'block';
     } else {
-        deleteBtn.style.display = 'none';
+        deleteBtn.textContent = 'Leave Chat';
+        deleteBtn.onclick = leaveChat;
+        deleteBtn.style.display = 'block';
     }
 
     document.getElementById('messages').innerHTML = '';
@@ -583,6 +587,39 @@ async function handleInviteUser(e) {
     }
 }
 
+async function leaveChat() {
+    if (!currentChat) return;
+    if (!confirm('Are you sure you want to leave this chat?')) return;
+
+    try {
+        const res = await fetch(`/chats/${currentChat.id}/leave`, {
+            method: 'DELETE'
+        });
+
+        if (res.ok) {
+            currentChat = null;
+            currentChatID = null;
+            document.getElementById('messages').innerHTML = '';
+            document.getElementById('active-chat-name').textContent = '';
+            document.getElementById('message-input').disabled = true;
+            document.getElementById('send-btn').disabled = true;
+            document.getElementById('delete-chat-btn').style.display = 'none';
+
+            // Switch back to no chat selected view
+            document.getElementById('active-chat').style.display = 'none';
+            document.getElementById('no-chat-selected').style.display = 'flex';
+            document.getElementById('participants-sidebar').style.display = 'none';
+            loadChats();
+        } else {
+            const err = await res.text();
+            alert('Failed to leave chat: ' + err);
+        }
+    } catch (err) {
+        console.error(err);
+        alert('Error leaving chat');
+    }
+}
+
 let searchTimeout;
 async function handleSearchUsers(query) {
     const dropdown = document.getElementById('user-suggestions');
@@ -713,6 +750,17 @@ function connectWS() {
                 document.getElementById('participants-sidebar').style.display = 'none';
                 currentChat = null;
                 alert('This chat has been deleted by the owner.');
+            }
+            return;
+        }
+        if (msg.type === 'participant_left') {
+            // Ignore if I'm the one who left (handled by leaveChat function)
+            if (msg.user_id === currentUserID) {
+                return;
+            }
+            // Refresh participant list if viewing this chat
+            if (currentChat && currentChat.id === msg.chat_id) {
+                loadParticipants(msg.chat_id, currentChat.owner_id);
             }
             return;
         }

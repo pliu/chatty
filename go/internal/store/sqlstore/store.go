@@ -152,6 +152,12 @@ func (s *SQLStore) AddParticipant(chatID, userID int, encryptedKey string) error
 	return err
 }
 
+func (s *SQLStore) RemoveParticipant(chatID, userID int) error {
+	query := s.rebind("DELETE FROM participants WHERE chat_id = ? AND user_id = ?")
+	_, err := s.db.Exec(query, chatID, userID)
+	return err
+}
+
 func (s *SQLStore) IsParticipant(chatID, userID int) (bool, error) {
 	var exists bool
 	query := s.rebind("SELECT EXISTS(SELECT 1 FROM participants WHERE chat_id = ? AND user_id = ?)")

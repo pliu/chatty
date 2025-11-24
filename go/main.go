@@ -57,6 +57,7 @@ func main() {
 	chatRouter.HandleFunc("/{id}/invite", chatHandler.InviteUser).Methods("POST")
 	chatRouter.HandleFunc("/{id}/messages", chatHandler.GetChatMessages).Methods("GET")
 	chatRouter.HandleFunc("/{id}/participants", chatHandler.GetChatParticipants).Methods("GET")
+	chatRouter.HandleFunc("/{id}/leave", chatHandler.LeaveChat).Methods("DELETE")
 	chatRouter.HandleFunc("/{id}", chatHandler.DeleteChat).Methods("DELETE")
 
 	// WebSocket Endpoint

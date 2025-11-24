@@ -12,6 +12,7 @@ type Store interface {
 	// Chat operations
 	CreateChat(name string, ownerID int) (int64, error)
 	AddParticipant(chatID, userID int, encryptedKey string) error
+	RemoveParticipant(chatID, userID int) error
 	IsParticipant(chatID, userID int) (bool, error)
 	GetUserChats(userID int) ([]models.Chat, error)
 	GetChatParticipants(chatID int) ([]models.User, error)

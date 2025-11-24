@@ -99,6 +99,43 @@ func (h *ChatHandler) InviteUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func (h *ChatHandler) LeaveChat(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	chatID, _ := strconv.Atoi(vars["id"])
+	userID := r.Context().Value(middleware.UserIDKey).(int)
+
+	// Verify user is NOT the owner
+	ownerID, err := h.Store.GetChatOwner(chatID)
+	if err != nil {
+		http.Error(w, "Chat not found", http.StatusNotFound)
+		return
+	}
+
+	if ownerID == userID {
+		http.Error(w, "Owners cannot leave chats, delete it instead", http.StatusForbidden)
+		return
+	}
+
+	if err := h.Store.RemoveParticipant(chatID, userID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Notify remaining participants
+	participants, err := h.Store.GetChatParticipants(chatID)
+	if err == nil {
+		for _, p := range participants {
+			h.Hub.SendNotification(p.ID, map[string]interface{}{
+				"type":    "participant_left",
+				"chat_id": chatID,
+				"user_id": userID,
+			})
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
 func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	chatID, _ := strconv.Atoi(vars["id"])

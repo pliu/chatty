@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
-	"github.com/pliu/chatty/internal/auth"
+	"github.com/pliu/chatty/internal/middleware"
 	"github.com/pliu/chatty/internal/store"
 	"github.com/pliu/chatty/internal/ws"
 )
@@ -25,7 +25,7 @@ type InviteUserRequest struct {
 }
 
 func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
-	userID := getUserIDFromCookie(r)
+	userID := r.Context().Value(middleware.UserIDKey).(int)
 
 	var req struct {
 		Name         string `json:"name"`
@@ -103,11 +103,7 @@ func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	chatID, _ := strconv.Atoi(vars["id"])
 
-	userID := getUserIDFromCookie(r)
-	if userID == 0 {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
+	userID := r.Context().Value(middleware.UserIDKey).(int)
 
 	// Verify user is the owner
 	ownerID, err := h.Store.GetChatOwner(chatID)
@@ -142,7 +138,7 @@ func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ChatHandler) GetChats(w http.ResponseWriter, r *http.Request) {
-	userID := getUserIDFromCookie(r)
+	userID := r.Context().Value(middleware.UserIDKey).(int)
 
 	chats, err := h.Store.GetUserChats(userID)
 	if err != nil {
@@ -157,11 +153,7 @@ func (h *ChatHandler) GetChatMessages(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	chatID, _ := strconv.Atoi(vars["id"])
 
-	userID := getUserIDFromCookie(r)
-	if userID == 0 {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
+	userID := r.Context().Value(middleware.UserIDKey).(int)
 
 	isParticipant, err := h.Store.IsParticipant(chatID, userID)
 	if err != nil || !isParticipant {
@@ -182,11 +174,7 @@ func (h *ChatHandler) GetChatParticipants(w http.ResponseWriter, r *http.Request
 	vars := mux.Vars(r)
 	chatID, _ := strconv.Atoi(vars["id"])
 
-	userID := getUserIDFromCookie(r)
-	if userID == 0 {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
+	userID := r.Context().Value(middleware.UserIDKey).(int)
 
 	isParticipant, err := h.Store.IsParticipant(chatID, userID)
 	if err != nil || !isParticipant {
@@ -201,19 +189,4 @@ func (h *ChatHandler) GetChatParticipants(w http.ResponseWriter, r *http.Request
 	}
 
 	json.NewEncoder(w).Encode(participants)
-}
-
-func getUserIDFromCookie(r *http.Request) int {
-	cookie, err := r.Cookie("user_id")
-	if err != nil {
-		return 0
-	}
-
-	userIDStr, err := auth.VerifyCookie(cookie.Value)
-	if err != nil {
-		return 0
-	}
-
-	id, _ := strconv.Atoi(userIDStr)
-	return id
 }

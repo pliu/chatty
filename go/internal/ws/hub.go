@@ -54,8 +54,19 @@ func (h *Hub) Run() {
 				close(client.send)
 			}
 		case message := <-h.broadcast:
+			// Verify sender is a participant
+			isSenderParticipant, err := h.store.IsParticipant(message.ChatID, message.UserID)
+			if err != nil {
+				log.Printf("Error checking sender participant status: %v", err)
+				continue
+			}
+			if !isSenderParticipant {
+				log.Printf("Unauthorized message attempt: User %d is not in Chat %d", message.UserID, message.ChatID)
+				continue
+			}
+
 			// Save message to DB
-			err := h.store.SaveMessage(message.ChatID, message.UserID, message.Content)
+			err = h.store.SaveMessage(message.ChatID, message.UserID, message.Content)
 			if err != nil {
 				log.Printf("Error saving message: %v", err)
 				continue

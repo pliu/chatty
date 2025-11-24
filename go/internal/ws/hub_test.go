@@ -8,39 +8,50 @@ import (
 	"github.com/pliu/chatty/internal/store/sqlstore"
 )
 
-func TestHubRun(t *testing.T) {
+func TestHubAuthorization(t *testing.T) {
+	// Setup in-memory DB
 	store, _ := sqlstore.New("sqlite3", ":memory:")
 	store.CreateUser(&models.User{Username: "user1", Password: "pass"})
-	user, _ := store.GetUserByUsername("user1")
-	chatID, _ := store.CreateChat("Test Chat", 1)
-	store.AddParticipant(int(chatID), user.ID, "key")
+	store.CreateUser(&models.User{Username: "attacker", Password: "pass"})
+
+	user1, _ := store.GetUserByUsername("user1")
+	attacker, _ := store.GetUserByUsername("attacker")
+
+	chatID, _ := store.CreateChat("Secret Chat", user1.ID)
+	store.AddParticipant(int(chatID), user1.ID, "key")
 
 	hub := NewHub(store)
 	go hub.Run()
 
-	// Simulate a message broadcast
+	// Attacker tries to send message
 	msg := Message{
 		ChatID:  int(chatID),
-		UserID:  user.ID,
-		Content: "Hello World",
+		UserID:  attacker.ID,
+		Content: "Malicious Message",
 	}
 
+	// Send message to broadcast channel
 	hub.broadcast <- msg
 
-	// Give some time for the hub to process
+	// Wait a bit for processing
 	time.Sleep(100 * time.Millisecond)
 
-	// Verify message was saved to store
-	messages, err := store.GetChatMessages(int(chatID))
-	if err != nil {
-		t.Fatalf("Failed to get messages: %v", err)
+	// Verify message was NOT saved
+	messages, _ := store.GetChatMessages(int(chatID))
+	if len(messages) != 0 {
+		t.Error("Expected 0 messages, got", len(messages))
 	}
 
+	// Now add attacker to chat
+	store.AddParticipant(int(chatID), attacker.ID, "key")
+
+	// Send again
+	hub.broadcast <- msg
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify message WAS saved
+	messages, _ = store.GetChatMessages(int(chatID))
 	if len(messages) != 1 {
-		t.Errorf("Expected 1 message, got %d", len(messages))
-	}
-
-	if messages[0].Content != "Hello World" {
-		t.Errorf("Expected content 'Hello World', got '%s'", messages[0].Content)
+		t.Error("Expected 1 message, got", len(messages))
 	}
 }

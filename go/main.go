@@ -3,7 +3,9 @@ package main
 import (
 	"flag"
 	"log"
+	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -16,6 +18,7 @@ import (
 )
 
 var addr = flag.String("addr", ":8080", "http service address")
+var httpsAddr = flag.String("https-addr", ":8443", "https service address")
 
 func main() {
 	flag.Parse()
@@ -96,6 +99,38 @@ func main() {
 		http.FileServer(http.Dir("static")).ServeHTTP(w, r)
 	}))
 
-	log.Println("Starting server on", *addr)
-	log.Fatal(http.ListenAndServe(*addr, r))
+	// Check if certs exist
+	_, errCert := os.Stat("cert.pem")
+	_, errKey := os.Stat("key.pem")
+	if errCert == nil && errKey == nil {
+		// HTTPS Mode
+		// Start HTTP Redirect Server in goroutine
+		go func() {
+			log.Printf("Starting HTTP Redirect Server on %s -> %s", *addr, *httpsAddr)
+			err := http.ListenAndServe(*addr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				host, _, err := net.SplitHostPort(r.Host)
+				if err != nil {
+					host = r.Host
+				}
+				// Construct target URL
+				// Assuming httpsAddr is like ":8443", we need to extract the port
+				_, port, _ := net.SplitHostPort(*httpsAddr)
+				target := "https://" + host + ":" + port + r.URL.Path
+				if len(r.URL.RawQuery) > 0 {
+					target += "?" + r.URL.RawQuery
+				}
+				http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+			}))
+			if err != nil {
+				log.Printf("HTTP Redirect Server failed: %v", err)
+			}
+		}()
+
+		log.Printf("Starting HTTPS Server on %s", *httpsAddr)
+		log.Fatal(http.ListenAndServeTLS(*httpsAddr, "cert.pem", "key.pem", r))
+	} else {
+		// HTTP Mode
+		log.Println("Starting server on", *addr)
+		log.Fatal(http.ListenAndServe(*addr, r))
+	}
 }

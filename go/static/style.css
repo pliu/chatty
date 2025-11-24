@@ -307,3 +307,19 @@ button:hover {
     border-radius: 3px;
     font-weight: 600;
 }
+
+.remove-participant-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: #dc3545;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0 0.5rem;
+    line-height: 1;
+}
+
+.remove-participant-btn:hover {
+    background: #ffebee;
+    border-radius: 50%;
+}

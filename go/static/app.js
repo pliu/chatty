@@ -339,6 +339,17 @@ async function loadParticipants(chatID, ownerID) {
                     badge.className = 'owner-badge';
                     badge.textContent = 'OWNER';
                     div.appendChild(badge);
+                } else if (ownerID === currentUserID) {
+                    // If current user is owner, show remove button for others
+                    const removeBtn = document.createElement('button');
+                    removeBtn.textContent = '×';
+                    removeBtn.title = 'Remove Participant';
+                    removeBtn.className = 'remove-participant-btn';
+                    removeBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        removeParticipant(chatID, participant.id, participant.username);
+                    };
+                    div.appendChild(removeBtn);
                 }
 
                 list.appendChild(div);
@@ -346,6 +357,26 @@ async function loadParticipants(chatID, ownerID) {
         }
     } catch (err) {
         console.error("Error loading participants:", err);
+    }
+}
+
+async function removeParticipant(chatID, userID, username) {
+    if (!confirm(`Are you sure you want to remove ${username} from this chat?`)) return;
+
+    try {
+        const res = await fetch(`/chats/${chatID}/participants/${userID}`, {
+            method: 'DELETE'
+        });
+
+        if (res.ok) {
+            loadParticipants(chatID, currentChat.owner_id);
+        } else {
+            const err = await res.text();
+            alert('Failed to remove participant: ' + err);
+        }
+    } catch (err) {
+        console.error(err);
+        alert('Error removing participant');
     }
 }
 
@@ -761,6 +792,20 @@ function connectWS() {
             // Refresh participant list if viewing this chat
             if (currentChat && currentChat.id === msg.chat_id) {
                 loadParticipants(msg.chat_id, currentChat.owner_id);
+            }
+            return;
+        }
+        if (msg.type === 'removed_from_chat') {
+            // Reload chat list to remove the chat
+            loadChats();
+
+            // If viewing the chat, clear it
+            if (currentChat && currentChat.id === msg.chat_id) {
+                document.getElementById('active-chat').style.display = 'none';
+                document.getElementById('no-chat-selected').style.display = 'flex';
+                document.getElementById('participants-sidebar').style.display = 'none';
+                currentChat = null;
+                alert('You have been removed from this chat.');
             }
             return;
         }

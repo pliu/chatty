@@ -136,6 +136,56 @@ func (h *ChatHandler) LeaveChat(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func (h *ChatHandler) RemoveParticipant(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	chatID, _ := strconv.Atoi(vars["id"])
+	targetUserID, _ := strconv.Atoi(vars["userID"])
+	requesterID := r.Context().Value(middleware.UserIDKey).(int)
+
+	// Verify requester is the owner
+	ownerID, err := h.Store.GetChatOwner(chatID)
+	if err != nil {
+		http.Error(w, "Chat not found", http.StatusNotFound)
+		return
+	}
+
+	if ownerID != requesterID {
+		http.Error(w, "Only the owner can remove participants", http.StatusForbidden)
+		return
+	}
+
+	// Cannot remove self (use DeleteChat instead)
+	if targetUserID == ownerID {
+		http.Error(w, "Cannot remove yourself, delete the chat instead", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Store.RemoveParticipant(chatID, targetUserID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Notify the removed user
+	h.Hub.SendNotification(targetUserID, map[string]interface{}{
+		"type":    "removed_from_chat",
+		"chat_id": chatID,
+	})
+
+	// Notify remaining participants
+	participants, err := h.Store.GetChatParticipants(chatID)
+	if err == nil {
+		for _, p := range participants {
+			h.Hub.SendNotification(p.ID, map[string]interface{}{
+				"type":    "participant_left",
+				"chat_id": chatID,
+				"user_id": targetUserID,
+			})
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
 func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	chatID, _ := strconv.Atoi(vars["id"])

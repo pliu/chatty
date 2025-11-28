@@ -5,9 +5,33 @@ let ws = null;
 // Check for existing session
 // We do NOT auto-login because we need the password to decrypt the private key.
 // If the page is refreshed, the memory is cleared, so the user must log in again.
-document.getElementById('auth-section').style.display = 'flex';
+document.getElementById('auth-section').style.display = 'block';
 document.getElementById('chat-section').style.display = 'none';
 showTab('login');
+
+// Theme Initialization
+const savedTheme = localStorage.getItem('theme') || 'light';
+document.documentElement.setAttribute('data-theme', savedTheme);
+
+// UI Helper Functions
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+}
+
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('open');
+}
+
+function toggleParticipants() {
+    const sidebar = document.getElementById('participants-sidebar');
+    sidebar.classList.toggle('open');
+}
 
 // Auth
 function showTab(tab) {
@@ -272,7 +296,16 @@ async function selectChat(chat) {
     currentChat = chat;
     document.getElementById('no-chat-selected').style.display = 'none';
     document.getElementById('active-chat').style.display = 'flex';
-    document.getElementById('participants-sidebar').style.display = 'flex';
+
+    // On desktop, show participants by default. On mobile, keep hidden until toggled.
+    if (window.innerWidth > 768) {
+        document.getElementById('participants-sidebar').classList.add('open');
+    } else {
+        document.getElementById('participants-sidebar').classList.remove('open');
+        // Close main sidebar on mobile when chat is selected
+        toggleSidebar();
+    }
+
     document.getElementById('active-chat-name').textContent = chat.name;
 
     // Show appropriate button based on ownership
@@ -405,7 +438,7 @@ async function deleteChat() {
             // But we can optimistically clear the view
             document.getElementById('active-chat').style.display = 'none';
             document.getElementById('no-chat-selected').style.display = 'flex';
-            document.getElementById('participants-sidebar').style.display = 'none';
+            document.getElementById('participants-sidebar').classList.remove('open');
             currentChat = null;
         } else {
             const err = await res.text();
@@ -639,7 +672,7 @@ async function leaveChat() {
             // Switch back to no chat selected view
             document.getElementById('active-chat').style.display = 'none';
             document.getElementById('no-chat-selected').style.display = 'flex';
-            document.getElementById('participants-sidebar').style.display = 'none';
+            document.getElementById('participants-sidebar').classList.remove('open');
             loadChats();
         } else {
             const err = await res.text();
@@ -778,7 +811,7 @@ function connectWS() {
             if (currentChat && currentChat.id === msg.chat_id) {
                 document.getElementById('active-chat').style.display = 'none';
                 document.getElementById('no-chat-selected').style.display = 'flex';
-                document.getElementById('participants-sidebar').style.display = 'none';
+                document.getElementById('participants-sidebar').classList.remove('open');
                 currentChat = null;
                 alert('This chat has been deleted by the owner.');
             }

@@ -5,99 +5,181 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chatty</title>
-    <link rel="stylesheet" href="/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css?v=2">
 </head>
 
 <body>
     <div id="app">
         <!-- Auth Section -->
-        <div id="auth-section">
-            <h1>Chatty</h1>
+        <div id="auth-section" class="card">
+            <div class="auth-header">
+                <h1>Chatty</h1>
+                <button id="theme-toggle-auth" class="icon-btn" onclick="toggleTheme()" aria-label="Toggle Dark Mode">
+                    <span class="material-icons">dark_mode</span>
+                </button>
+            </div>
+
             <div class="tabs">
-                <button onclick="showTab('login')">Login</button>
-                <button onclick="showTab('signup')">Signup</button>
+                <button class="tab-btn active" onclick="showTab('login')" id="tab-login">Login</button>
+                <button class="tab-btn" onclick="showTab('signup')" id="tab-signup">Signup</button>
             </div>
 
             <form id="login-form" onsubmit="handleLogin(event)">
-                <h2>Login</h2>
-                <input type="text" id="login-username" placeholder="Username" required>
-                <input type="password" id="login-password" placeholder="Password" required>
-                <button type="submit">Login</button>
+                <div class="input-group">
+                    <span class="material-icons">person</span>
+                    <input type="text" id="login-username" placeholder="Username" required>
+                </div>
+                <div class="input-group">
+                    <span class="material-icons">lock</span>
+                    <input type="password" id="login-password" placeholder="Password" required>
+                </div>
+                <button type="submit" class="btn-primary">Login</button>
             </form>
 
             <form id="signup-form" onsubmit="handleSignup(event)" style="display: none;">
-                <h2>Signup</h2>
-                <input type="text" id="signup-username" placeholder="Username" required>
-                <input type="password" id="signup-password" placeholder="Password" required>
-                <button type="submit">Sign Up</button>
+                <div class="input-group">
+                    <span class="material-icons">person</span>
+                    <input type="text" id="signup-username" placeholder="Username" required>
+                </div>
+                <div class="input-group">
+                    <span class="material-icons">lock</span>
+                    <input type="password" id="signup-password" placeholder="Password" required>
+                </div>
+                <button type="submit" class="btn-primary">Sign Up</button>
             </form>
         </div>
 
         <!-- Chat Section -->
         <div id="chat-section" style="display: none;">
-            <div id="sidebar">
-                <div class="header">
+            <!-- Mobile Header -->
+            <div class="mobile-header">
+                <button class="icon-btn" onclick="toggleSidebar()">
+                    <span class="material-icons">menu</span>
+                </button>
+                <h3>Chatty</h3>
+                <button class="icon-btn" onclick="toggleTheme()">
+                    <span class="material-icons">dark_mode</span>
+                </button>
+            </div>
+
+            <div id="sidebar" class="sidebar">
+                <div class="sidebar-header">
                     <h3>Chats</h3>
-                    <button onclick="showCreateChat()">+</button>
+                    <div class="sidebar-actions">
+                        <button class="icon-btn" onclick="toggleTheme()" title="Toggle Theme">
+                            <span class="material-icons">dark_mode</span>
+                        </button>
+                        <button class="icon-btn" onclick="showCreateChat()" title="New Chat">
+                            <span class="material-icons">add</span>
+                        </button>
+                    </div>
                 </div>
-                <div id="chat-list"></div>
+                <div id="chat-list" class="list-container"></div>
                 <div class="user-info">
-                    Logged in as <span id="current-username"></span>
-                    <button onclick="logout()">Logout</button>
+                    <div class="user-details">
+                        <span class="material-icons">account_circle</span>
+                        <span id="current-username"></span>
+                    </div>
+                    <button class="icon-btn" onclick="logout()" title="Logout">
+                        <span class="material-icons">logout</span>
+                    </button>
                 </div>
             </div>
 
+            <div id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
             <div id="main-chat">
-                <div id="no-chat-selected">
-                    Select a chat to start messaging
+                <div id="no-chat-selected" class="empty-state">
+                    <span class="material-icons large-icon">chat_bubble_outline</span>
+                    <p>Select a chat to start messaging</p>
                 </div>
                 <div id="active-chat" style="display: none;">
                     <div class="chat-header">
-                        <h3 id="active-chat-name"></h3>
+                        <div class="chat-title">
+                            <button class="icon-btn mobile-only" onclick="toggleSidebar()">
+                                <span class="material-icons">arrow_back</span>
+                            </button>
+                            <h3 id="active-chat-name"></h3>
+                        </div>
                         <div class="chat-actions">
-                            <button onclick="showInvite()">Invite User</button>
+                            <button class="icon-btn" onclick="toggleParticipants()" title="View Participants">
+                                <span class="material-icons">group</span>
+                            </button>
+                            <button class="icon-btn" onclick="showInvite()" title="Invite User">
+                                <span class="material-icons">person_add</span>
+                            </button>
                             <button id="delete-chat-btn" onclick="deleteChat()" style="display: none;"
-                                class="delete-btn">Delete Chat</button>
+                                class="icon-btn delete-btn" title="Delete Chat">
+                                <span class="material-icons">delete</span>
+                            </button>
                         </div>
                     </div>
                     <div id="messages"></div>
                     <form id="message-form" onsubmit="sendMessage(event)">
-                        <input type="text" id="message-input" placeholder="Type a message..." required>
-                        <button type="submit" id="send-btn">Send</button>
+                        <div class="message-input-wrapper">
+                            <input type="text" id="message-input" placeholder="Type a message..." required
+                                autocomplete="off">
+                            <button type="submit" id="send-btn" class="icon-btn send-btn">
+                                <span class="material-icons">send</span>
+                            </button>
+                        </div>
                     </form>
                 </div>
             </div>
 
-            <div id="participants-sidebar">
-                <h4>Participants</h4>
-                <div id="participants-list"></div>
+            <div id="participants-sidebar" class="participants-sidebar">
+                <div class="sidebar-header">
+                    <h4>Participants</h4>
+                    <button class="icon-btn" onclick="toggleParticipants()">
+                        <span class="material-icons">close</span>
+                    </button>
+                </div>
+                <div id="participants-list" class="list-container"></div>
             </div>
         </div>
     </div>
 
     <!-- Modals -->
     <div id="create-chat-modal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="closeModal('create-chat-modal')">&times;</span>
-            <h2>Create New Chat</h2>
+        <div class="modal-content card">
+            <div class="modal-header">
+                <h2>Create New Chat</h2>
+                <span class="close" onclick="closeModal('create-chat-modal')">&times;</span>
+            </div>
             <form onsubmit="handleCreateChat(event)">
-                <input type="text" id="new-chat-name" placeholder="Chat Name" required>
-                <button type="submit">Create</button>
+                <div class="input-group">
+                    <span class="material-icons">chat</span>
+                    <input type="text" id="new-chat-name" placeholder="Chat Name" required>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-text" onclick="closeModal('create-chat-modal')">Cancel</button>
+                    <button type="submit" class="btn-primary">Create</button>
+                </div>
             </form>
         </div>
     </div>
 
     <div id="invite-modal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="closeModal('invite-modal')">&times;</span>
-            <h2>Invite User</h2>
+        <div class="modal-content card">
+            <div class="modal-header">
+                <h2>Invite User</h2>
+                <span class="close" onclick="closeModal('invite-modal')">&times;</span>
+            </div>
             <form onsubmit="handleInviteUser(event)" autocomplete="off">
-                <div style="position: relative;">
+                <div style="position: relative;" class="input-group">
+                    <span class="material-icons">search</span>
                     <input type="text" id="invite-username" placeholder="Username to invite" required
                         oninput="handleSearchUsers(this.value)">
-                    <div id="user-suggestions" class="suggestions-dropdown"></div>
+                    <div id="user-suggestions" class="suggestions-dropdown card"></div>
                 </div>
-                <button type="submit">Invite</button>
+                <div class="modal-actions">
+                    <button type="button" class="btn-text" onclick="closeModal('invite-modal')">Cancel</button>
+                    <button type="submit" class="btn-primary">Invite</button>
+                </div>
             </form>
         </div>
     </div>

@@ -10,15 +10,21 @@ func TestCreateUser(t *testing.T) {
 	SetupTestDB(t)
 	defer TeardownTestDB()
 
-	err := testStore.CreateUser(&models.User{Username: "testuser", Password: "password123"})
+	err := testStore.CreateUser(&models.User{Username: "testuser", Email: "test@example.com", Password: "password123"})
 	if err != nil {
 		t.Errorf("Failed to create user: %v", err)
 	}
 
-	// Test duplicate user
-	err = testStore.CreateUser(&models.User{Username: "testuser", Password: "password123"})
+	// Test duplicate email
+	err = testStore.CreateUser(&models.User{Username: "otheruser", Email: "test@example.com", Password: "password123"})
 	if err == nil {
-		t.Error("Expected error when creating duplicate user, got nil")
+		t.Error("Expected error when creating duplicate email, got nil")
+	}
+
+	// Test duplicate username (should succeed now)
+	err = testStore.CreateUser(&models.User{Username: "testuser", Email: "test2@example.com", Password: "password123"})
+	if err != nil {
+		t.Errorf("Expected success when creating duplicate username with different email, got error: %v", err)
 	}
 }
 
@@ -34,6 +40,7 @@ func TestCreateUserWithKeys(t *testing.T) {
 
 	user := &models.User{
 		Username:            "keyuser",
+		Email:               "keyuser@example.com",
 		Password:            "password123",
 		PublicKey:           publicKey,
 		EncryptedPrivateKey: encryptedPrivateKey,
@@ -61,7 +68,7 @@ func TestGetUserByUsername(t *testing.T) {
 	SetupTestDB(t)
 	defer TeardownTestDB()
 
-	testStore.CreateUser(&models.User{Username: "testuser", Password: "password123"})
+	testStore.CreateUser(&models.User{Username: "testuser", Email: "test@example.com", Password: "password123"})
 
 	user, err := testStore.GetUserByUsername("testuser")
 	if err != nil {
@@ -82,9 +89,9 @@ func TestSearchUsers(t *testing.T) {
 	SetupTestDB(t)
 	defer TeardownTestDB()
 
-	testStore.CreateUser(&models.User{Username: "alice", Password: "pass"})
-	testStore.CreateUser(&models.User{Username: "bob", Password: "pass"})
-	testStore.CreateUser(&models.User{Username: "alex", Password: "pass"})
+	testStore.CreateUser(&models.User{Username: "alice", Email: "alice@example.com", Password: "pass"})
+	testStore.CreateUser(&models.User{Username: "bob", Email: "bob@example.com", Password: "pass"})
+	testStore.CreateUser(&models.User{Username: "alex", Email: "alex@example.com", Password: "pass"})
 
 	users, err := testStore.SearchUsers("al")
 	if err != nil {

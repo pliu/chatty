@@ -37,6 +37,15 @@ function toggleParticipants() {
 function showTab(tab) {
     document.getElementById('login-form').style.display = tab === 'login' ? 'flex' : 'none';
     document.getElementById('signup-form').style.display = tab === 'signup' ? 'flex' : 'none';
+
+    // Update active state
+    if (tab === 'login') {
+        document.getElementById('tab-login').classList.add('active');
+        document.getElementById('tab-signup').classList.remove('active');
+    } else {
+        document.getElementById('tab-login').classList.remove('active');
+        document.getElementById('tab-signup').classList.add('active');
+    }
 }
 
 async function hashPassword(password) {
@@ -44,6 +53,16 @@ async function hashPassword(password) {
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function maskEmail(email) {
+    if (!email) return "";
+    const [local, domain] = email.split('@');
+    if (!local || !domain) return email;
+    const len = local.length;
+    const visible = Math.max(1, Math.min(3, Math.floor(len / 2)));
+    const masked = local.substring(0, visible) + '*'.repeat(len - visible);
+    return `${masked}@${domain}`;
 }
 
 let currentChatID = null;
@@ -161,14 +180,14 @@ async function decryptPrivateKey(encryptedData, password) {
 
 async function handleLogin(e) {
     e.preventDefault();
-    const username = document.getElementById('login-username').value;
+    const email = document.getElementById('login-email').value;
     const passwordRaw = document.getElementById('login-password').value;
 
     try {
         const passwordHash = await hashPassword(passwordRaw);
         const res = await fetch('/login', {
             method: 'POST',
-            body: JSON.stringify({ username, password: passwordHash }),
+            body: JSON.stringify({ email, password: passwordHash }),
             headers: { 'Content-Type': 'application/json' }
         });
 
@@ -191,12 +210,12 @@ async function handleLogin(e) {
                 localStorage.setItem('public_key', me.public_key);
             }
 
-            document.getElementById('login-username').value = '';
+            document.getElementById('login-email').value = '';
             document.getElementById('login-password').value = '';
 
             document.getElementById('auth-section').style.display = 'none';
             document.getElementById('chat-section').style.display = 'flex';
-            document.getElementById('current-username').textContent = currentUser;
+            document.getElementById('current-username').textContent = `${currentUser} (${maskEmail(me.email)})`;
 
             loadChats();
             connectWS();
@@ -212,6 +231,7 @@ async function handleLogin(e) {
 async function handleSignup(e) {
     e.preventDefault();
     const username = document.getElementById('signup-username').value;
+    const email = document.getElementById('signup-email').value;
     const passwordRaw = document.getElementById('signup-password').value;
 
     try {
@@ -231,6 +251,7 @@ async function handleSignup(e) {
             method: 'POST',
             body: JSON.stringify({
                 username,
+                email,
                 password: passwordHash,
                 public_key: publicKey,
                 encrypted_private_key: encryptedPrivateKey
@@ -239,8 +260,10 @@ async function handleSignup(e) {
         });
 
         if (res.ok) {
-            alert('Signup successful! Please login.');
+            const data = await res.json();
+            alert(data.message || 'Signup successful! Please check your email to verify.');
             document.getElementById('signup-username').value = '';
+            document.getElementById('signup-email').value = '';
             document.getElementById('signup-password').value = '';
             showTab('login');
         } else {

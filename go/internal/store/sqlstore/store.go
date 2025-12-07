@@ -34,10 +34,13 @@ func (s *SQLStore) createTables() {
 	query := `
 	CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		username TEXT UNIQUE NOT NULL,
+		username TEXT NOT NULL,
+		email TEXT UNIQUE NOT NULL,
 		password TEXT NOT NULL,
 		public_key TEXT,
-		encrypted_private_key TEXT
+		encrypted_private_key TEXT,
+		is_verified BOOLEAN DEFAULT FALSE,
+		verification_token TEXT
 	);
 
 	CREATE TABLE IF NOT EXISTS chats (
@@ -91,16 +94,43 @@ func (s *SQLStore) rebind(query string) string {
 }
 
 func (s *SQLStore) CreateUser(user *models.User) error {
-	query := s.rebind("INSERT INTO users (username, password, public_key, encrypted_private_key) VALUES (?, ?, ?, ?)")
-	_, err := s.db.Exec(query, user.Username, user.Password, user.PublicKey, user.EncryptedPrivateKey)
+	query := s.rebind("INSERT INTO users (username, email, password, public_key, encrypted_private_key, is_verified, verification_token) VALUES (?, ?, ?, ?, ?, ?, ?)")
+	_, err := s.db.Exec(query, user.Username, user.Email, user.Password, user.PublicKey, user.EncryptedPrivateKey, user.IsVerified, user.VerificationToken)
 	return err
+}
+
+func (s *SQLStore) GetUserByEmail(email string) (*models.User, error) {
+	var user models.User
+	query := s.rebind("SELECT id, username, email, password, COALESCE(public_key, ''), COALESCE(encrypted_private_key, ''), is_verified FROM users WHERE email = ?")
+
+	err := s.db.QueryRow(query, email).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.PublicKey, &user.EncryptedPrivateKey, &user.IsVerified)
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (s *SQLStore) VerifyUser(token string) error {
+	query := s.rebind("UPDATE users SET is_verified = TRUE, verification_token = '' WHERE verification_token = ?")
+	result, err := s.db.Exec(query, token)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("invalid token")
+	}
+	return nil
 }
 
 func (s *SQLStore) GetUserByUsername(username string) (*models.User, error) {
 	var user models.User
-	query := s.rebind("SELECT id, username, password, COALESCE(public_key, ''), COALESCE(encrypted_private_key, '') FROM users WHERE username = ?")
+	query := s.rebind("SELECT id, username, email, password, COALESCE(public_key, ''), COALESCE(encrypted_private_key, ''), is_verified FROM users WHERE username = ?")
 
-	err := s.db.QueryRow(query, username).Scan(&user.ID, &user.Username, &user.Password, &user.PublicKey, &user.EncryptedPrivateKey)
+	err := s.db.QueryRow(query, username).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.PublicKey, &user.EncryptedPrivateKey, &user.IsVerified)
 	if err != nil {
 		return nil, err
 	}
@@ -109,8 +139,8 @@ func (s *SQLStore) GetUserByUsername(username string) (*models.User, error) {
 
 func (s *SQLStore) GetUserByID(id int) (*models.User, error) {
 	var user models.User
-	query := s.rebind("SELECT id, username, password, COALESCE(public_key, ''), COALESCE(encrypted_private_key, '') FROM users WHERE id = ?")
-	err := s.db.QueryRow(query, id).Scan(&user.ID, &user.Username, &user.Password, &user.PublicKey, &user.EncryptedPrivateKey)
+	query := s.rebind("SELECT id, username, email, password, COALESCE(public_key, ''), COALESCE(encrypted_private_key, ''), is_verified FROM users WHERE id = ?")
+	err := s.db.QueryRow(query, id).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.PublicKey, &user.EncryptedPrivateKey, &user.IsVerified)
 	if err != nil {
 		return nil, err
 	}

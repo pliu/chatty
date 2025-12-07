@@ -5,9 +5,12 @@ import "time"
 type User struct {
 	ID                  int    `json:"id"`
 	Username            string `json:"username"`
+	Email               string `json:"email"`
 	Password            string `json:"-"`
 	PublicKey           string `json:"public_key"`
 	EncryptedPrivateKey string `json:"encrypted_private_key"`
+	IsVerified          bool   `json:"is_verified"`
+	VerificationToken   string `json:"-"`
 }
 
 type Chat struct {

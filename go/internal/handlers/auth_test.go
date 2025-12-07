@@ -24,6 +24,7 @@ func TestSignup(t *testing.T) {
 
 	creds := map[string]string{
 		"username":              "testuser",
+		"email":                 "test@example.com",
 		"password":              "password123",
 		"public_key":            "mock_public_key",
 		"encrypted_private_key": "mock_private_key",
@@ -71,13 +72,15 @@ func TestLogin(t *testing.T) {
 
 	store.CreateUser(&models.User{
 		Username:            "testuser",
+		Email:               "test@example.com",
 		Password:            string(hashedPassword),
 		PublicKey:           "mock_public_key",
 		EncryptedPrivateKey: "mock_private_key",
+		IsVerified:          true,
 	})
 
 	creds := Credentials{
-		Username: "testuser",
+		Email:    "test@example.com",
 		Password: "password123",
 	}
 	body, _ := json.Marshal(creds)

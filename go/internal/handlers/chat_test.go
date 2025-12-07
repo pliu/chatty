@@ -18,7 +18,7 @@ import (
 
 func TestCreateChat(t *testing.T) {
 	store, _ := sqlstore.New("sqlite3", ":memory:")
-	store.CreateUser(&models.User{Username: "user1", Password: "pass"})
+	store.CreateUser(&models.User{Username: "user1", Email: "user1@example.com", Password: "pass"})
 	user, _ := store.GetUserByUsername("user1")
 
 	handler := &ChatHandler{Store: store}
@@ -50,8 +50,8 @@ func TestCreateChat(t *testing.T) {
 
 func TestInviteUser(t *testing.T) {
 	store, _ := sqlstore.New("sqlite3", ":memory:")
-	store.CreateUser(&models.User{Username: "owner", Password: "pass"})
-	store.CreateUser(&models.User{Username: "invitee", Password: "pass"})
+	store.CreateUser(&models.User{Username: "owner", Email: "owner@example.com", Password: "pass"})
+	store.CreateUser(&models.User{Username: "invitee", Email: "invitee@example.com", Password: "pass"})
 
 	chatID, _ := store.CreateChat("Test Chat", 1)
 	owner, _ := store.GetUserByUsername("owner")
@@ -88,7 +88,7 @@ func TestInviteUser(t *testing.T) {
 
 func TestGetChats(t *testing.T) {
 	store, _ := sqlstore.New("sqlite3", ":memory:")
-	store.CreateUser(&models.User{Username: "user1", Password: "pass"})
+	store.CreateUser(&models.User{Username: "user1", Email: "user1@example.com", Password: "pass"})
 	user, _ := store.GetUserByUsername("user1")
 
 	_, _ = store.CreateChat("Chat 1", 1)

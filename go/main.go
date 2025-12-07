@@ -46,6 +46,7 @@ func main() {
 
 	// API Endpoints
 	r.HandleFunc("/signup", authHandler.Signup).Methods("POST")
+	r.HandleFunc("/verify", authHandler.VerifyEmail).Methods("GET")
 	r.HandleFunc("/login", authHandler.Login).Methods("POST")
 	r.HandleFunc("/users/search", authHandler.SearchUsers).Methods("GET")
 

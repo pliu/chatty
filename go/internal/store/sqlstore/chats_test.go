@@ -24,7 +24,7 @@ func TestAddParticipant(t *testing.T) {
 	SetupTestDB(t)
 	defer TeardownTestDB()
 
-	testStore.CreateUser(&models.User{Username: "user1", Password: "pass"})
+	testStore.CreateUser(&models.User{Username: "user1", Email: "user1@example.com", Password: "pass"})
 	chatID, _ := testStore.CreateChat("Chat 1", 1)
 	user, _ := testStore.GetUserByUsername("user1")
 
@@ -47,7 +47,7 @@ func TestSaveMessage(t *testing.T) {
 	SetupTestDB(t)
 	defer TeardownTestDB()
 
-	testStore.CreateUser(&models.User{Username: "user1", Password: "pass"})
+	testStore.CreateUser(&models.User{Username: "user1", Email: "user1@example.com", Password: "pass"})
 	chatID, _ := testStore.CreateChat("Chat 1", 1)
 	user, _ := testStore.GetUserByUsername("user1")
 
@@ -74,7 +74,7 @@ func TestDeleteChat(t *testing.T) {
 	SetupTestDB(t)
 	defer TeardownTestDB()
 
-	testStore.CreateUser(&models.User{Username: "owner", Password: "pass"})
+	testStore.CreateUser(&models.User{Username: "owner", Email: "owner@example.com", Password: "pass"})
 	owner, _ := testStore.GetUserByUsername("owner")
 	chatID, _ := testStore.CreateChat("Chat to Delete", owner.ID)
 

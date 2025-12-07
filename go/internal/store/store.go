@@ -6,6 +6,8 @@ type Store interface {
 	// User operations
 	CreateUser(user *models.User) error
 	GetUserByUsername(username string) (*models.User, error)
+	GetUserByEmail(email string) (*models.User, error)
+	VerifyUser(token string) error
 	GetUserByID(id int) (*models.User, error)
 	SearchUsers(query string) ([]models.User, error)
 

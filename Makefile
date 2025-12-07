@@ -1,7 +1,10 @@
 .PHONY: run test build clean
 
+LOCAL_IP := $(shell ifconfig | grep "inet " | grep -Fv 127.0.0.1 | awk '{print $$2}' | head -n1)
+
 run:
-	cd go && go run main.go
+	@echo "Running on https://$(LOCAL_IP):8443"
+	cd go && go run main.go -base-url=https://$(LOCAL_IP):8443
 
 test:
 	cd go && go test -count=1 ./...

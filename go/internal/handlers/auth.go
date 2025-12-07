@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/pliu/chatty/internal/auth"
+	"github.com/pliu/chatty/internal/email"
 	"github.com/pliu/chatty/internal/models"
 	"github.com/pliu/chatty/internal/store"
 	"golang.org/x/crypto/bcrypt"
@@ -20,7 +21,9 @@ type Credentials struct {
 }
 
 type AuthHandler struct {
-	Store store.Store
+	Store       store.Store
+	BaseURL     string
+	EmailSender *email.Sender
 }
 
 func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +72,24 @@ func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Log the verification link
-	fmt.Printf("VERIFICATION LINK: http://%s/verify?token=%s\n", r.Host, verificationToken)
+	baseURL := h.BaseURL
+	// Simple trim to avoid double slash if user provided one
+	if len(baseURL) > 0 && baseURL[len(baseURL)-1] == '/' {
+		baseURL = baseURL[:len(baseURL)-1]
+	}
+
+	// Send verification email
+	verificationLink := fmt.Sprintf("%s/verify?token=%s", baseURL, verificationToken)
+	if h.EmailSender != nil {
+		go func() {
+			if err := h.EmailSender.SendVerificationEmail(req.Email, req.Username, verificationLink); err != nil {
+				fmt.Printf("Failed to send email to %s: %v\n", req.Email, err)
+			}
+		}()
+	} else {
+		// Fallback logging if sender not configured (though main ensures it)
+		fmt.Printf("VERIFICATION LINK: %s\n", verificationLink)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

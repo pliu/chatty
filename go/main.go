@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/pliu/chatty/internal/auth"
+	"github.com/pliu/chatty/internal/email"
 	"github.com/pliu/chatty/internal/handlers"
 	"github.com/pliu/chatty/internal/middleware"
 	"github.com/pliu/chatty/internal/store/sqlstore"
@@ -18,11 +19,26 @@ import (
 )
 
 var addr = flag.String("addr", ":8080", "http service address")
+
 var httpsAddr = flag.String("https-addr", ":8443", "https service address")
+var baseURL = flag.String("base-url", "", "base url for the application (e.g., https://localhost:8443)")
+var certFile = flag.String("cert-file", "cert.pem", "path to cert file")
+var keyFile = flag.String("key-file", "key.pem", "path to key file")
+
+// Email flags
+var smtpHost = flag.String("smtp-host", "", "SMTP host")
+var smtpPort = flag.String("smtp-port", "587", "SMTP port")
+var smtpUsername = flag.String("smtp-username", "", "SMTP username")
+var smtpPassword = flag.String("smtp-password", "", "SMTP password")
+var emailFrom = flag.String("email-from", "noreply@chatty.com", "From email address")
 
 func main() {
 	flag.Parse()
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	if *baseURL == "" {
+		log.Fatal("Base URL must be set via -base-url flag")
+	}
 
 	// Initialize Database
 	// Connect to Postgres (running via docker-compose)
@@ -37,8 +53,18 @@ func main() {
 	hub := ws.NewHub(store)
 	go hub.Run()
 
+	// Initialize Email Sender
+	var emailSender *email.Sender
+	if *smtpHost != "" {
+		emailSender = email.NewSender(*smtpHost, *smtpPort, *smtpUsername, *smtpPassword, *emailFrom)
+	}
+
 	// Initialize Handlers
-	authHandler := &handlers.AuthHandler{Store: store}
+	authHandler := &handlers.AuthHandler{
+		Store:       store,
+		BaseURL:     *baseURL,
+		EmailSender: emailSender,
+	}
 	chatHandler := &handlers.ChatHandler{Store: store, Hub: hub}
 
 	r := mux.NewRouter()
@@ -103,37 +129,37 @@ func main() {
 	}))
 
 	// Check if certs exist
-	_, errCert := os.Stat("cert.pem")
-	_, errKey := os.Stat("key.pem")
-	if errCert == nil && errKey == nil {
-		// HTTPS Mode
-		// Start HTTP Redirect Server in goroutine
-		go func() {
-			log.Printf("Starting HTTP Redirect Server on %s -> %s", *addr, *httpsAddr)
-			err := http.ListenAndServe(*addr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				host, _, err := net.SplitHostPort(r.Host)
-				if err != nil {
-					host = r.Host
-				}
-				// Construct target URL
-				// Assuming httpsAddr is like ":8443", we need to extract the port
-				_, port, _ := net.SplitHostPort(*httpsAddr)
-				target := "https://" + host + ":" + port + r.URL.Path
-				if len(r.URL.RawQuery) > 0 {
-					target += "?" + r.URL.RawQuery
-				}
-				http.Redirect(w, r, target, http.StatusTemporaryRedirect)
-			}))
-			if err != nil {
-				log.Printf("HTTP Redirect Server failed: %v", err)
-			}
-		}()
-
-		log.Printf("Starting HTTPS Server on %s", *httpsAddr)
-		log.Fatal(http.ListenAndServeTLS(*httpsAddr, "cert.pem", "key.pem", r))
-	} else {
-		// HTTP Mode
-		log.Println("Starting server on", *addr)
-		log.Fatal(http.ListenAndServe(*addr, r))
+	if _, err := os.Stat(*certFile); err != nil {
+		log.Fatalf("Certificate file not found (%s). This server requires HTTPS. Please provide valid cert and key files.", *certFile)
 	}
+	if _, err := os.Stat(*keyFile); err != nil {
+		log.Fatalf("Key file not found (%s). This server requires HTTPS. Please provide valid cert and key files.", *keyFile)
+	}
+
+	// HTTPS Mode
+	// Start HTTP Redirect Server in goroutine
+	go func() {
+		log.Printf("Starting HTTP Redirect Server on %s -> %s", *addr, *httpsAddr)
+		err := http.ListenAndServe(*addr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			host, _, err := net.SplitHostPort(r.Host)
+			if err != nil {
+				host = r.Host
+			}
+			// Construct target URL
+			// Assuming httpsAddr is like ":8443", we need to extract the port
+			_, port, _ := net.SplitHostPort(*httpsAddr)
+			target := "https://" + host + ":" + port + r.URL.Path
+			if len(r.URL.RawQuery) > 0 {
+				target += "?" + r.URL.RawQuery
+			}
+			http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+		}))
+		if err != nil {
+			log.Printf("HTTP Redirect Server failed: %v", err)
+		}
+	}()
+
+	log.Printf("Starting HTTPS Server on %s", *httpsAddr)
+	log.Printf("Using cert: %s, key: %s", *certFile, *keyFile)
+	log.Fatal(http.ListenAndServeTLS(*httpsAddr, *certFile, *keyFile, r))
 }

@@ -55,15 +55,7 @@ async function hashPassword(password) {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function maskEmail(email) {
-    if (!email) return "";
-    const [local, domain] = email.split('@');
-    if (!local || !domain) return email;
-    const len = local.length;
-    const visible = Math.max(1, Math.min(3, Math.floor(len / 2)));
-    const masked = local.substring(0, visible) + '*'.repeat(len - visible);
-    return `${masked}@${domain}`;
-}
+
 
 let currentChatID = null;
 let chatKeys = {}; // Map chatID -> decrypted symmetric key
@@ -215,7 +207,7 @@ async function handleLogin(e) {
 
             document.getElementById('auth-section').style.display = 'none';
             document.getElementById('chat-section').style.display = 'flex';
-            document.getElementById('current-username').textContent = `${currentUser} (${maskEmail(me.email)})`;
+            document.getElementById('current-username').textContent = `${currentUser} (${me.email})`;
 
             loadChats();
             connectWS();
@@ -387,7 +379,7 @@ async function loadParticipants(chatID, ownerID) {
                 }
 
                 const nameSpan = document.createElement('span');
-                nameSpan.textContent = participant.username;
+                nameSpan.textContent = `${participant.username} (${participant.email})`;
                 div.appendChild(nameSpan);
 
                 if (participant.id === ownerID) {
@@ -737,7 +729,7 @@ async function handleSearchUsers(query) {
                 filteredUsers.forEach(user => {
                     const div = document.createElement('div');
                     div.className = 'suggestion-item';
-                    div.textContent = user.username;
+                    div.textContent = `${user.username} (${user.email})`;
                     div.onclick = () => selectUser(user.username);
                     dropdown.appendChild(div);
                 });

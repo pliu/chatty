@@ -148,7 +148,7 @@ func (s *SQLStore) GetUserByID(id int) (*models.User, error) {
 }
 
 func (s *SQLStore) SearchUsers(queryStr string) ([]models.User, error) {
-	query := s.rebind("SELECT id, username, COALESCE(public_key, '') FROM users WHERE username LIKE ? LIMIT 10")
+	query := s.rebind("SELECT id, username, email, COALESCE(public_key, '') FROM users WHERE username LIKE ? LIMIT 10")
 	rows, err := s.db.Query(query, "%"+queryStr+"%")
 	if err != nil {
 		return nil, err
@@ -158,9 +158,10 @@ func (s *SQLStore) SearchUsers(queryStr string) ([]models.User, error) {
 	var users []models.User
 	for rows.Next() {
 		var user models.User
-		if err := rows.Scan(&user.ID, &user.Username, &user.PublicKey); err != nil {
+		if err := rows.Scan(&user.ID, &user.Username, &user.Email, &user.PublicKey); err != nil {
 			return nil, err
 		}
+		user.Email = maskEmail(user.Email)
 		users = append(users, user)
 	}
 	return users, nil
@@ -219,9 +220,34 @@ func (s *SQLStore) GetUserChats(userID int) ([]models.Chat, error) {
 	return chats, nil
 }
 
+func maskEmail(email string) string {
+	if email == "" {
+		return ""
+	}
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return email
+	}
+	local, domain := parts[0], parts[1]
+	length := len(local)
+	visible := 1
+	if length > 2 {
+		visible = length / 2
+		if visible > 3 {
+			visible = 3
+		}
+	} else {
+		// For very short names, show 1 char
+		visible = 1
+	}
+
+	maskedLocal := local[:visible] + strings.Repeat("*", length-visible)
+	return maskedLocal + "@" + domain
+}
+
 func (s *SQLStore) GetChatParticipants(chatID int) ([]models.User, error) {
 	query := s.rebind(`
-		SELECT u.id, u.username, u.public_key, u.encrypted_private_key
+		SELECT u.id, u.username, u.email, u.public_key, u.encrypted_private_key
 		FROM users u
 		JOIN participants p ON u.id = p.user_id
 		WHERE p.chat_id = ?
@@ -236,9 +262,10 @@ func (s *SQLStore) GetChatParticipants(chatID int) ([]models.User, error) {
 	var users []models.User
 	for rows.Next() {
 		var u models.User
-		if err := rows.Scan(&u.ID, &u.Username, &u.PublicKey, &u.EncryptedPrivateKey); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.PublicKey, &u.EncryptedPrivateKey); err != nil {
 			return nil, err
 		}
+		u.Email = maskEmail(u.Email)
 		users = append(users, u)
 	}
 	return users, nil

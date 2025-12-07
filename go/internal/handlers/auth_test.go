@@ -20,7 +20,7 @@ func TestSignup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	handler := &AuthHandler{Store: store}
+	handler := &AuthHandler{Store: store, BaseURL: "http://example.com"}
 
 	creds := map[string]string{
 		"username":              "testuser",
@@ -66,7 +66,7 @@ func TestSignup(t *testing.T) {
 
 func TestLogin(t *testing.T) {
 	store, _ := sqlstore.New("sqlite3", ":memory:")
-	handler := &AuthHandler{Store: store}
+	handler := &AuthHandler{Store: store, BaseURL: "http://example.com"}
 
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
 
